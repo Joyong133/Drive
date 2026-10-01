@@ -559,9 +559,28 @@ export class Cockpit {
     this.lastDraw += dt;
     if (this.lastDraw > 1 / 12) {
       this.lastDraw = 0;
-      this.drawCluster();
-      this.drawScreen();
-      this.screenTex.needsUpdate = true;
+      // 바뀐 게 있을 때만 다시 그림 (VR에서 텍스처 업로드 비용 절약)
+      const c = this.car;
+      const st = this.exam.getStatus();
+      const clusterKey = [Math.round(c.kmh), c.gear, c.blinkOn, c.turn, c.hazard, c.lights, c.seatbelt, c.epb, c.power, c.wiper, st.mode, st.score, st.section].join('|');
+      if (clusterKey !== this.clusterKey) {
+        this.clusterKey = clusterKey;
+        this.drawCluster();
+      }
+      const cal = this.app.input?.calib;
+      const meters = cal?.meters ? cal.meters.map((m) => Math.round(m.value * 50)).join(',') : '';
+      const hoverBtn = this.hoverUV ? this.hitTest(this.hoverUV)?.id : '';
+      const screenKey = [
+        this.page, st.mode, st.phase, st.score, st.section, st.timer, st.instruction, !!st.result,
+        hoverBtn, this.pressedId, JSON.stringify(this.app.settings).length, this.app.settings.footMode,
+        this.app.settings.voice, this.app.settings.guide, this.app.settings.rearCam, this.app.settings.mirrors,
+        cal ? `${cal.active}${cal.stepIndex}${cal.prompt}${cal.error}${cal.done}${meters}` : '',
+      ].join('|');
+      if (screenKey !== this.screenKey) {
+        this.screenKey = screenKey;
+        this.drawScreen();
+        this.screenTex.needsUpdate = true;
+      }
     }
     this.hud.visible = xrActive || this.app.settings.desktopHud;
     if (this.hud.visible) this.drawHud();

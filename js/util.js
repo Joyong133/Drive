@@ -60,14 +60,14 @@ export function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// 표지판 등 고정 글자 텍스처
-export function labelTexture(lines, opts = {}) {
+// 표지판 등 고정 글자: 캔버스의 (x, y, w, h) 영역에 그림
+export function drawLabel(ctx, x, y, w, h, lines, opts = {}) {
   const {
-    w = 512, h = 256, bg = '#1f5fbf', fg = '#ffffff', border = '#ffffff',
+    bg = '#1f5fbf', fg = '#ffffff', border = '#ffffff',
     size = 96, weight = 900, radius = 28, pad = 14,
   } = opts;
-  const c = makeCanvas(w, h);
-  const ctx = c.getContext('2d');
+  ctx.save();
+  ctx.translate(x, y);
   if (bg) {
     ctx.fillStyle = border || bg;
     roundRect(ctx, 0, 0, w, h, radius);
@@ -87,6 +87,13 @@ export function labelTexture(lines, opts = {}) {
     ctx.font = `${weight} ${s}px ${FONT}`;
     ctx.fillText(text, w / 2, lineH * (i + 0.8), w - pad * 4);
   });
+  ctx.restore();
+}
+
+export function labelTexture(lines, opts = {}) {
+  const { w = 512, h = 256 } = opts;
+  const c = makeCanvas(w, h);
+  drawLabel(c.getContext('2d'), 0, 0, w, h, lines, opts);
   return canvasTexture(c);
 }
 

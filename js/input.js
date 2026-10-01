@@ -282,6 +282,8 @@ export class Input {
   onKey(e, down) {
     if (e.target && e.target.closest && e.target.closest('input,select,textarea')) return;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'F1'].includes(e.code)) e.preventDefault();
+    // 주행 중에는 Enter가 화면의 버튼을 누르지 않도록
+    if (e.code === 'Enter' && this.app.started && !this.app.paused) e.preventDefault();
     if (!down) {
       this.keys.delete(e.code);
       if (e.code === 'KeyH') this.app.audio.horn(false);
@@ -364,6 +366,7 @@ export class Input {
     const car = this.car;
     let grabDelta = 0, grabCount = 0;
     this.footQuat = null;
+    app.cockpit.hoverUV = null;
 
     for (const c of this.controllers) {
       const gp = c.source?.gamepad;
@@ -373,7 +376,8 @@ export class Input {
       c.visual.tip.visible = !isFoot;
       if (isFoot) {
         c.laser.visible = false;
-        this.footQuat = c.grip.quaternion.clone();
+        // 리그 기준 발 방향 (그립 포즈 행렬에서 직접 계산)
+        this.footQuat = new THREE.Quaternion().setFromRotationMatrix(c.grip.matrix);
         if (S.footCal) {
           const f = footPedals(S.footCal, this.footQuat);
           out.throttle = Math.max(out.throttle, f.throttle);
@@ -595,7 +599,7 @@ export class Input {
     const down = !paused && (k.has('ArrowDown'));
     const maxT = k.has('ShiftLeft') || k.has('ShiftRight') ? 1 : 0.5;
     this.kbThrottle = up ? approach(this.kbThrottle, maxT, dt * 1.1) : approach(this.kbThrottle, 0, dt * 4);
-    this.kbBrake = down ? approach(this.kbBrake, 1, dt * 2.6) : approach(this.kbBrake, 0, dt * 5);
+    this.kbBrake = down ? approach(this.kbBrake, 1, dt * 4) : approach(this.kbBrake, 0, dt * 5);
     out.throttle = Math.max(out.throttle, this.kbThrottle);
     out.brake = Math.max(out.brake, this.kbBrake);
     if (up || down) this.lastSource = 'keyboard';

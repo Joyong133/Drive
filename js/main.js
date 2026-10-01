@@ -426,6 +426,8 @@ app.startDesktop = (mode) => {
 function beginSession(mode) {
   app.started = true;
   app.paused = false;
+  // 시작 버튼에 포커스가 남아 있으면 Enter/Space(시동/EPB)가 버튼을 다시 누르게 됨
+  document.activeElement?.blur?.();
   ui.hideStart();
   if (mode === 'exam') actions.startExam();
   else actions.startPractice();

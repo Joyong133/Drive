@@ -69,6 +69,7 @@ export class UI {
     if (show && this.modalKind) { this.closeModal(); return; }
     el.classList.toggle('hidden', !show);
     this.app.paused = show || !!this.modalKind;
+    if (!show) document.activeElement?.blur?.();
   }
 
   open(kind) {
@@ -86,6 +87,7 @@ export class UI {
     clearInterval(this.modalTimer);
     $('#modal').classList.add('hidden');
     this.app.paused = !$('#pause-menu').classList.contains('hidden');
+    document.activeElement?.blur?.();
   }
 
   renderModal() {

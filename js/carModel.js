@@ -163,27 +163,48 @@ function hazardTexture() {
   return canvasTexture(c);
 }
 
+let liteShared = null;
+
+function commonMaterials() {
+  const sc = makeCanvas(128, 128);
+  const sg = sc.getContext('2d');
+  const grad = sg.createRadialGradient(64, 64, 10, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(0,0,0,0.75)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  sg.fillStyle = grad;
+  sg.fillRect(0, 0, 128, 128);
+  return {
+    black: new THREE.MeshStandardMaterial({ color: 0x0c0d10, metalness: 0.2, roughness: 0.5 }),
+    glass: new THREE.MeshStandardMaterial({
+      color: 0x05080e, metalness: 0.4, roughness: 0.04, transparent: true, opacity: 0.92, envMapIntensity: 1.6,
+    }),
+    chrome: new THREE.MeshStandardMaterial({ color: 0xc9ced8, metalness: 0.9, roughness: 0.2 }),
+    rubber: new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.9 }),
+    linerMat: new THREE.MeshBasicMaterial({ color: 0x08090b, side: THREE.DoubleSide }),
+    underMat: new THREE.MeshBasicMaterial({ color: 0x0a0a0c }),
+    rimMat: new THREE.MeshStandardMaterial({ map: rimTexture(), metalness: 0.6, roughness: 0.35 }),
+    shadowMat: new THREE.MeshBasicMaterial({ map: canvasTexture(sc), transparent: true, depthWrite: false }),
+    mats: {
+      drl: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+      head: new THREE.MeshBasicMaterial({ color: 0x9aa4b4 }),
+      tail: new THREE.MeshBasicMaterial({ color: 0x5a0a10 }),
+      brake: new THREE.MeshBasicMaterial({ color: 0x4a0a10 }),
+      reverse: new THREE.MeshBasicMaterial({ color: 0x777777 }),
+      turnL: new THREE.MeshBasicMaterial({ color: 0x4a2a00 }),
+      turnR: new THREE.MeshBasicMaterial({ color: 0x4a2a00 }),
+    },
+  };
+}
+
 export function buildCarModel({ color = 0x1f6fff, interior = true, plate = '12가 2026', lite = false } = {}) {
   const root = new THREE.Group();
   root.rotation.order = 'YXZ';
 
   const paint = new THREE.MeshStandardMaterial({ color, metalness: 0.55, roughness: 0.32, envMapIntensity: 1.2 });
-  const black = new THREE.MeshStandardMaterial({ color: 0x0c0d10, metalness: 0.2, roughness: 0.5 });
-  const glass = new THREE.MeshStandardMaterial({
-    color: 0x05080e, metalness: 0.4, roughness: 0.04, transparent: true, opacity: 0.92, envMapIntensity: 1.6,
-  });
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xc9ced8, metalness: 0.9, roughness: 0.2 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.9 });
-
-  const mats = {
-    drl: new THREE.MeshBasicMaterial({ color: 0xffffff }),
-    head: new THREE.MeshBasicMaterial({ color: 0x9aa4b4 }),
-    tail: new THREE.MeshBasicMaterial({ color: 0x5a0a10 }),
-    brake: new THREE.MeshBasicMaterial({ color: 0x4a0a10 }),
-    reverse: new THREE.MeshBasicMaterial({ color: 0x777777 }),
-    turnL: new THREE.MeshBasicMaterial({ color: 0x4a2a00 }),
-    turnR: new THREE.MeshBasicMaterial({ color: 0x4a2a00 }),
-  };
+  // 장식용(lite) 차들은 공용 재질을 써서 하나로 합쳐 그릴 수 있게 함
+  const C = lite ? (liteShared ||= commonMaterials()) : commonMaterials();
+  const { black, glass, chrome, rubber, linerMat, underMat, rimMat, shadowMat } = C;
+  const mats = C.mats;
 
   // ── 차체
   const body = new THREE.Mesh(cutCabinTop(extrudeSide(bodyShape(), 1.9, 0.07, 0.045), -1.1, 1.66, 0.9), paint);
@@ -221,14 +242,13 @@ export function buildCarModel({ color = 0x1f6fff, interior = true, plate = '12�
   // 휠하우스 안쪽 (차체 너머가 비쳐 보이지 않게)
   const linerGeo = new THREE.CylinderGeometry(0.47, 0.47, 1.86, 20, 1, true, -Math.PI / 2, Math.PI);
   linerGeo.rotateZ(Math.PI / 2);
-  const linerMat = new THREE.MeshBasicMaterial({ color: 0x08090b, side: THREE.DoubleSide });
   for (const z of [-1.45, 1.45]) {
     const liner = new THREE.Mesh(linerGeo, linerMat);
     liner.position.set(0, 0.37, z);
     root.add(liner);
   }
   // 차량 하부
-  const under = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 4.4), new THREE.MeshBasicMaterial({ color: 0x0a0a0c }));
+  const under = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 4.4), underMat);
   under.position.set(0, 0.27, 0);
   root.add(under);
 
@@ -291,7 +311,6 @@ export function buildCarModel({ color = 0x1f6fff, interior = true, plate = '12�
   const wheels = [];
   const tireGeo = new THREE.CylinderGeometry(CAR.wheelR, CAR.wheelR, CAR.tireW, 28, 1);
   tireGeo.rotateZ(Math.PI / 2);
-  const rimMat = new THREE.MeshStandardMaterial({ map: rimTexture(), metalness: 0.6, roughness: 0.35 });
   const rimGeo = new THREE.CircleGeometry(CAR.wheelR * 0.74, 28);
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const steer = new THREE.Group();
@@ -308,16 +327,7 @@ export function buildCarModel({ color = 0x1f6fff, interior = true, plate = '12�
   }
 
   // 차 아래 그림자 (가벼운 블롭 섀도)
-  const sc = makeCanvas(128, 128);
-  const sg = sc.getContext('2d');
-  const grad = sg.createRadialGradient(64, 64, 10, 64, 64, 64);
-  grad.addColorStop(0, 'rgba(0,0,0,0.75)');
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
-  sg.fillStyle = grad; sg.fillRect(0, 0, 128, 128);
-  const shadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.6, 5.6),
-    new THREE.MeshBasicMaterial({ map: canvasTexture(sc), transparent: true, depthWrite: false }),
-  );
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 5.6), shadowMat);
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = 0.03;
   shadow.renderOrder = 1;

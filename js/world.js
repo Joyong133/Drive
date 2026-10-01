@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { ROAD, HILL_X0, HILL_X1, heightAt, hillProfile } from './course.js';
 import {
-  GeoBatch, labelTexture, noiseTexture, matrixFrom, makeCanvas, canvasTexture, randRange, roundRect, FONT,
+  GeoBatch, labelTexture, drawLabel, noiseTexture, matrixFrom, makeCanvas, canvasTexture, randRange, roundRect, FONT,
 } from './util.js';
 import { buildCarModel } from './carModel.js';
 
@@ -379,27 +379,10 @@ export function buildWorld(scene, course, renderer) {
   }
   rails.build(root, 'rails');
 
-  // ── 표지판
+  // ── 표지판 (모든 글자를 텍스처 하나에 모아 한 번에 그림)
   const signs = new GeoBatch();
-  const signMeshes = [];
-  const addSign = (s, lines2, opts = {}) => {
-    const d = opts.d ?? ROAD.right + 1.4;
-    const p = course.pointAt(s, d);
-    const y0 = heightAt(p.x, p.z);
-    const w = opts.w ?? 1.6, hgt = opts.h ?? 0.8;
-    const poleH = opts.poleH ?? 2.2;
-    signs.addBox(M.post, 0.08, poleH + hgt / 2, 0.08, p.x, y0 + (poleH + hgt / 2) / 2, p.z);
-    const tex = labelTexture(lines2, { bg: opts.bg ?? '#1d5fc4', fg: opts.fg ?? '#fff', size: opts.size ?? 92, w: 512, h: Math.round((512 * hgt) / w) });
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, hgt), new THREE.MeshLambertMaterial({ map: tex, emissive: 0x333333, emissiveMap: tex }));
-    mesh.position.set(p.x, y0 + poleH + hgt / 2, p.z);
-    mesh.rotation.y = -p.h;
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(w, hgt), M.darkMetal);
-    back.rotation.y = Math.PI;
-    back.position.z = -0.01;
-    mesh.add(back);
-    root.add(mesh);
-    signMeshes.push(mesh);
-  };
+  const signSpecs = [];
+  const addSign = (s, lines2, opts = {}) => signSpecs.push({ s, lines: lines2, opts });
   addSign(z.startLine + 1.5, ['출발', { text: '좌측 깜빡이 → 출발', size: 44 }], { bg: '#167a3e' });
   addSign(z.hill.s0 - 6, ['경사로', { text: '정지구간에서 정지', size: 44 }]);
   addSign(z.hill.stop0 - 0.5, [{ text: '▼ 정지구간', size: 70 }], { bg: '#e2a400', fg: '#1b1b1b', w: 1.4, h: 0.5, poleH: 1.4, d: ROAD.right + 1.0 });
@@ -411,6 +394,48 @@ export function buildWorld(scene, course, renderer) {
   addSign(z.finish - 3, ['종료', { text: '종료선 통과 후 정지', size: 44 }], { bg: '#167a3e' });
   for (const t of z.turns) {
     addSign(t.s0 - 12, [t.dir > 0 ? '우회전 ↱' : '↰ 좌회전', { text: '방향지시등 켜기', size: 44 }], { w: 1.3, h: 0.65, size: 80, bg: '#2a4f8a' });
+  }
+  {
+    const AW = 2048, SW = 512;
+    let x = 0, y = 0, rowH = 0;
+    for (const sp of signSpecs) {
+      const w = sp.opts.w ?? 1.6, hgt = sp.opts.h ?? 0.8;
+      sp.px = { w: SW, h: Math.round((SW * hgt) / w) };
+      if (x + SW > AW) { x = 0; y += rowH; rowH = 0; }
+      sp.slot = { x, y };
+      x += SW;
+      rowH = Math.max(rowH, sp.px.h);
+    }
+    const AH = THREE.MathUtils.ceilPowerOfTwo(y + rowH);
+    const atlas = makeCanvas(AW, AH);
+    const actx = atlas.getContext('2d');
+    for (const sp of signSpecs) {
+      drawLabel(actx, sp.slot.x, sp.slot.y, sp.px.w, sp.px.h, sp.lines, {
+        bg: sp.opts.bg ?? '#1d5fc4', fg: sp.opts.fg ?? '#fff', size: sp.opts.size ?? 92,
+      });
+    }
+    const atlasTex = canvasTexture(atlas);
+    const signMat = new THREE.MeshLambertMaterial({ map: atlasTex, emissive: 0x333333, emissiveMap: atlasTex });
+    for (const sp of signSpecs) {
+      const d = sp.opts.d ?? ROAD.right + 1.4;
+      const p = course.pointAt(sp.s, d);
+      const y0 = heightAt(p.x, p.z);
+      const w = sp.opts.w ?? 1.6, hgt = sp.opts.h ?? 0.8;
+      const poleH = sp.opts.poleH ?? 2.2;
+      signs.addBox(M.post, 0.08, poleH + hgt / 2, 0.08, p.x, y0 + (poleH + hgt / 2) / 2, p.z);
+      const face = new THREE.PlaneGeometry(w, hgt);
+      const uv = face.attributes.uv;
+      for (let i = 0; i < uv.count; i++) {
+        const u = uv.getX(i), v = uv.getY(i);
+        uv.setXY(i, (sp.slot.x + u * sp.px.w) / AW, 1 - (sp.slot.y + (1 - v) * sp.px.h) / AH);
+      }
+      const cy = y0 + poleH + hgt / 2;
+      signs.add(face, signMat, matrixFrom(p.x, cy, p.z, -p.h));
+      // 뒷면: 진행 방향 쪽으로 1cm 물러난 반대 방향 판
+      const back = new THREE.PlaneGeometry(w, hgt);
+      const fx = Math.sin(p.h) * 0.01, fz = -Math.cos(p.h) * 0.01;
+      signs.add(back, M.darkMetal, matrixFrom(p.x + fx, cy, p.z + fz, -p.h + Math.PI));
+    }
   }
   signs.build(root, 'sign-posts');
 
@@ -571,12 +596,14 @@ export function buildWorld(scene, course, renderer) {
   const parked = [
     [0xd8dde4, -33, -2, 0], [0x22252b, -33, 4, 0], [0xb3122a, -33, 10, 0], [0x3b6e5a, -19, -2, Math.PI], [0xf0f0f0, -19, 10, Math.PI],
   ];
+  const parkedRoot = new THREE.Group();
   for (const [color, x, zz, ry] of parked) {
     const m = buildCarModel({ color, interior: false, lite: true });
     m.root.position.set(x, 0, zz);
     m.root.rotation.y = ry + Math.PI / 2;
-    bakeStatic(m.root, root);
+    parkedRoot.add(m.root);
   }
+  bakeStatic(parkedRoot, root);
 
   // ── 울타리
   const F = { x0: -48, x1: 178, z0: -121, z1: 61 };
