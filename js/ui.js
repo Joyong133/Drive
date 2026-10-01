@@ -21,6 +21,13 @@ export class UI {
     $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') this.closeModal(); });
     $('#pause-menu').addEventListener('click', (e) => { if (e.target.id === 'pause-menu') this.toggleMenu(false); });
     this.deviceTimer = setInterval(() => this.updateDeviceLine(), 700);
+    // 화면 조작 버튼 켜고 끄기 (키보드가 없거나 마우스로만 운전할 때)
+    $('#tp-toggle').addEventListener('click', () => {
+      const on = app.touchpad?.visible;
+      app.actions.setSetting('touchPad', on ? 'off' : 'on');
+      this.toast(on ? '화면 조작 버튼을 숨겼어요' : '화면 조작 버튼을 켰어요', 'info');
+      document.activeElement?.blur?.();
+    });
   }
 
   pickedMode() {
@@ -106,6 +113,16 @@ export class UI {
     const row = (k, d) => `<tr><td>${k}</td><td>${d}</td></tr>`;
     return `
       <h2>조작법</h2>
+      <h3>시동 거는 법 (먼저 읽어 주세요)</h3>
+      <table>
+        ${row('키보드', '<kbd>B</kbd>(안전벨트) → <kbd>↓</kbd>를 누른 채 <kbd>Enter</kbd> → <kbd>D</kbd> → <kbd>↑</kbd>')}
+        ${row('VR 컨트롤러', '빨간 [안전벨트] 버튼을 손끝으로 → 왼손 트리거(브레이크)를 당긴 채 오른손 스틱 누르기 → 오른손 스틱을 뒤로 당겨 D → 오른손 트리거')}
+        ${row('게임패드', '십자키 ←(안전벨트) → LT(브레이크)를 당긴 채 A → 십자키 ↓로 D → RT')}
+        ${row('화면 버튼', '[벨트] → [START] → [D] → [가속]을 길게 누르기')}
+      </table>
+      <p class="note"><b>간편 조작</b>이 켜져 있으면(기본값) 브레이크를 안 밟아도 START·변속 때 자동으로 브레이크를 밟아 줘요. 실제처럼 연습하려면 [설정]에서 끄세요.</p>
+      <h3>화면 조작 버튼 (휴대폰·태블릿·마우스)</h3>
+      <p class="note">터치 화면에서는 자동으로 나타나요. PC에서는 오른쪽 아래 <b>[화면 버튼]</b>으로 켜고 끕니다. 왼쪽 아래 핸들을 손가락으로 돌리고, 오른쪽 아래 [브레이크]·[가속]을 누르고 있으면 밟혀요(길게 누를수록 깊게).</p>
       <h3>키보드 (PC)</h3>
       <table>
         ${row('<kbd>↑</kbd> / <kbd>Shift</kbd>+<kbd>↑</kbd>', '가속 페달 (천천히 / 깊게)')}
@@ -174,6 +191,13 @@ export class UI {
         ${toggle('rearCam', '후방 카메라', 'R단에서 센터 화면에 후방 영상 표시')}
         ${toggle('mirrors', '디지털 사이드미러', '끄면 VR 성능이 좋아집니다')}
         ${toggle('desktopHud', 'PC에서도 앞유리 HUD 보기', 'VR에서는 항상 표시')}
+        ${toggle('easy', '간편 조작 (자동 브레이크)', '브레이크를 안 밟고 시동·변속해도 자동으로 브레이크를 밟아 줍니다. 끄면 실제 차처럼 엄격해져요')}
+        <label class="setting"><span>화면 조작 버튼<small>핸들·페달·버튼을 화면에 표시 (키보드나 VR 컨트롤러가 없을 때)</small></span>
+          <select data-setting="touchPad">
+            <option value="auto" ${S.touchPad === 'auto' ? 'selected' : ''}>자동 (터치 화면이면 표시)</option>
+            <option value="on" ${S.touchPad === 'on' ? 'selected' : ''}>항상 표시</option>
+            <option value="off" ${S.touchPad === 'off' ? 'selected' : ''}>숨기기</option>
+          </select></label>
         ${toggle('hillHold', '언덕 밀림 방지(HAC)', '실제 시험 연습에는 끄는 것을 추천')}
         <label class="setting"><span>그래픽 해상도<small>낮추면 부드러워집니다</small></span>
           <select data-setting="quality">

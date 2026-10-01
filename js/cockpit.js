@@ -321,12 +321,15 @@ export class Cockpit {
     this.btn(g, 'seatF', '좌석 앞으로', x0, 86 + (bh + gap) * 2, bw, bh, { small: true, action: () => A.seat(-0.03) });
     this.btn(g, 'seatB', '좌석 뒤로', x0 + bw + gap, 86 + (bh + gap) * 2, bw, bh, { small: true, action: () => A.seat(0.03) });
     this.btn(g, 'mirrors', `디지털 미러\n${S.mirrors ? '켬' : '끔 (성능↑)'}`, x0 + (bw + gap) * 2, 86 + (bh + gap) * 2, bw, bh, { on: S.mirrors, small: true, action: () => A.setSetting('mirrors', !S.mirrors) });
-    this.btn(g, 'back', '← 뒤로', x0, 86 + (bh + gap) * 3 + 8, bw, 92, { action: () => { this.page = 'home'; } });
+    const y4 = 86 + (bh + gap) * 3 + 8;
+    this.btn(g, 'back', '← 뒤로', x0, y4, bw, 92, { action: () => { this.page = 'home'; } });
+    this.btn(g, 'easy', `간편 조작(자동 브레이크)\n${S.easy ? '켬' : '끔 (실전처럼)'}`, x0 + bw + gap, y4, bw, 92, { on: S.easy, small: true, action: () => A.setSetting('easy', !S.easy) });
     g.fillStyle = '#9fb0d6';
-    g.font = `700 24px ${FONT}`;
+    g.font = `700 22px ${FONT}`;
     g.textAlign = 'left';
     g.textBaseline = 'middle';
-    g.fillText('발 컨트롤러: 컨트롤러를 발등에 묶고 뒤꿈치를 축으로 페달을 밟아요', x0 + bw + gap, 86 + (bh + gap) * 3 + 54);
+    g.fillText('발 컨트롤러:', x0 + (bw + gap) * 2, y4 + 30);
+    g.fillText('발등에 묶고 뒤꿈치 축으로', x0 + (bw + gap) * 2, y4 + 60);
   }
 
   drawCalibPage(g, cal) {
@@ -573,7 +576,7 @@ export class Cockpit {
       const screenKey = [
         this.page, st.mode, st.phase, st.score, st.section, st.timer, st.instruction, !!st.result,
         hoverBtn, this.pressedId, JSON.stringify(this.app.settings).length, this.app.settings.footMode,
-        this.app.settings.voice, this.app.settings.guide, this.app.settings.rearCam, this.app.settings.mirrors,
+        this.app.settings.voice, this.app.settings.guide, this.app.settings.rearCam, this.app.settings.mirrors, this.app.settings.easy,
         cal ? `${cal.active}${cal.stepIndex}${cal.prompt}${cal.error}${cal.done}${meters}` : '',
       ].join('|');
       if (screenKey !== this.screenKey) {

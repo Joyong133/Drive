@@ -25,6 +25,8 @@ html, body {
   color: var(--text);
 }
 
+#app canvas { touch-action: none; }
+
 #app, #app canvas {
   position: fixed;
   inset: 0;
@@ -220,6 +222,73 @@ kbd {
 .hud-help {
   position: absolute; bottom: 12px; right: 16px; color: var(--muted); font-size: 13px;
   background: rgba(0, 0, 0, 0.35); padding: 6px 10px; border-radius: 8px;
+  display: flex; gap: 10px; align-items: center; pointer-events: auto;
+}
+.hud-btn {
+  appearance: none; border: 1px solid var(--line); background: rgba(61, 220, 255, 0.16);
+  color: var(--accent); font: inherit; font-weight: 700; font-size: 13px;
+  padding: 4px 10px; border-radius: 8px; cursor: pointer;
+}
+.hud-btn:focus-visible, .tp-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 화면 조작 버튼 (터치/마우스) */
+#touch-pad {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 12;
+  display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 12px;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+}
+#touch-pad > * { pointer-events: auto; touch-action: none; }
+.tp-wheel {
+  width: clamp(120px, 24vw, 180px); aspect-ratio: 1; border-radius: 50%;
+  display: grid; place-items: center; position: relative; cursor: grab;
+  background: radial-gradient(circle, rgba(12, 18, 36, 0.55) 0 55%, rgba(12, 18, 36, 0.75) 56%);
+  border: 1px solid var(--line); color: #c9d6f2;
+}
+.tp-wheel svg { width: 88%; height: 88%; transition: transform 0.03s linear; }
+.tp-wheel .tp-mark { fill: var(--accent); }
+.tp-wheel span { position: absolute; top: -20px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.tp-wheel.down { border-color: var(--accent); cursor: grabbing; }
+.tp-buttons {
+  justify-self: center; align-self: end;
+  display: grid; grid-template-columns: repeat(5, minmax(48px, 64px)); gap: 6px;
+}
+.tp-btn {
+  appearance: none; border: 1px solid var(--line); border-radius: 10px;
+  background: rgba(12, 18, 36, 0.82); color: var(--text);
+  font: inherit; font-weight: 700; font-size: 13px; padding: 9px 4px; cursor: pointer;
+  touch-action: manipulation;
+}
+.tp-btn:active { transform: scale(0.96); }
+.tp-btn.on { background: rgba(61, 220, 255, 0.85); color: #061128; border-color: transparent; }
+.tp-btn[data-tp="power"] { border-color: rgba(61, 220, 255, 0.7); color: var(--accent); }
+.tp-btn[data-tp="power"].on { color: #061128; }
+.tp-btn[data-tp="gearR"].on, .tp-btn[data-tp="epb"].on { background: rgba(255, 84, 104, 0.9); color: #fff; }
+.tp-btn[data-tp="hazard"].on, .tp-btn[data-tp="turnL"].on, .tp-btn[data-tp="turnR"].on { background: rgba(255, 204, 51, 0.92); color: #1b1300; }
+.tp-pedals { display: flex; gap: 10px; align-items: flex-end; }
+.tp-pedal {
+  display: grid; place-items: center; border-radius: 14px; cursor: pointer;
+  font-weight: 900; font-size: 15px; color: var(--text);
+  background: rgba(12, 18, 36, 0.82); border: 2px solid var(--line);
+  transition: transform 0.05s ease, background 0.1s ease;
+}
+.tp-pedal.brake { width: 92px; height: 104px; border-color: rgba(255, 84, 104, 0.7); }
+.tp-pedal.accel { width: 64px; height: 136px; border-color: rgba(62, 224, 143, 0.7); }
+.tp-pedal.brake.down { background: rgba(255, 84, 104, 0.85); transform: scale(0.96); }
+.tp-pedal.accel.down { background: rgba(62, 224, 143, 0.85); color: #03240f; transform: scale(0.96); }
+body.touch-on .hud-help .keys { display: none; }
+body.touch-on .hud-help { bottom: auto; top: 96px; right: 16px; }
+body.touch-on .hud-speed { top: 16px; bottom: auto; font-size: 22px; padding: 8px 12px; }
+body.touch-on .hud-panel { width: min(460px, calc(100vw - 190px)); }
+@media (max-width: 760px) {
+  #touch-pad { grid-template-columns: auto 1fr; }
+  .tp-buttons { grid-column: 1 / -1; grid-row: 1; width: 100%; grid-template-columns: repeat(5, 1fr); }
+  .tp-pedals { justify-self: end; }
+  .tp-btn { padding: 8px 2px; font-size: 12px; }
+  body.touch-on .hud-panel { width: calc(100vw - 32px); }
+  body.touch-on .hud-speed { top: 168px; bottom: auto; left: 16px; right: auto; font-size: 18px; }
+  body.touch-on .hud-speed .gear { width: 34px; height: 34px; }
+  body.touch-on .hud-help { top: 168px; }
 }
 @media (max-width: 700px) { .hud-speed { top: auto; bottom: 48px; } }
 

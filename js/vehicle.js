@@ -14,6 +14,10 @@ export class Vehicle extends Emitter {
     this.mass = 2050;
     this.maxSteer = 0.6; // 앞바퀴 최대 조향각(약 34°)
     this.hillHold = false; // 시험 연습용: 언덕 밀림 방지 끔
+    this.easy = true;        // 간편 조작: 브레이크 없이 시동/변속하면 자동으로 브레이크를 밟아 줌
+    this.beltRequired = false; // 시험 중에는 안전벨트를 매야 주차 브레이크가 풀림
+    this.brakeHint = () => '브레이크';
+    this.lastTipT = -1e9;
     this.reset();
   }
 
@@ -41,6 +45,7 @@ export class Vehicle extends Emitter {
     this.s = 0; this.d = 0; this.lap = 0; this.sAbs = 0;
     this.offRoute = 0;
     this.lastShiftMsgT = 0;
+    this.autoBrakeT = 0;
   }
 
   get kmh() { return Math.abs(this.v) * 3.6; }
@@ -88,10 +93,24 @@ export class Vehicle extends Emitter {
   // ───────── 조작 ─────────
   message(text, kind = 'info') { this.emit('message', text, kind); }
 
+  // 시동/변속 때 브레이크 확인. 간편 조작이면 잠깐 자동으로 밟아 줌
+  brakeReady(what) {
+    if (this.brake >= 0.25 || this.autoBrakeT > 0) return true;
+    if (!this.easy) return false;
+    this.autoBrakeT = 0.8;
+    this.emit('autoBrake');
+    const now = performance.now();
+    if (now - this.lastTipT > 15000) {
+      this.lastTipT = now;
+      this.message(`${what}: 브레이크를 자동으로 밟았어요. 실제 차에서는 브레이크(${this.brakeHint()})를 밟은 채 해야 해요`);
+    }
+    return true;
+  }
+
   togglePower() {
     if (!this.power) {
-      if (this.brake < 0.25) {
-        this.message('브레이크 페달을 밟은 상태에서 시동 버튼을 누르세요', 'warn');
+      if (!this.brakeReady('시동')) {
+        this.message(`브레이크(${this.brakeHint()})를 밟은 채 시동 버튼을 누르세요`, 'warn');
         this.emit('denied');
         return false;
       }
@@ -113,13 +132,11 @@ export class Vehicle extends Emitter {
     if (target === this.gear) return true;
     const deny = (msg) => { this.message(msg, 'warn'); this.emit('denied'); return false; };
     if (!this.power) return deny('먼저 시동을 거세요 (브레이크 + START 버튼)');
-    if (this.gear === 'P' && this.brake < 0.25) return deny('브레이크를 밟은 상태에서 변속하세요');
+    const needBrake = this.gear === 'P' || (this.gear === 'N' && target !== 'P' && target !== 'N' && Math.abs(this.v) < 0.3);
+    if (needBrake && !this.brakeReady('변속')) return deny(`브레이크(${this.brakeHint()})를 밟은 채 변속하세요`);
     if (target === 'P' && Math.abs(this.v) > 0.5) return deny('완전히 정차한 뒤 P로 변속하세요');
     if ((target === 'R' && this.v > 1.2) || (target === 'D' && this.v < -1.2)) {
       return deny('차가 움직이는 방향과 반대로는 변속할 수 없습니다');
-    }
-    if (target !== 'P' && target !== 'N' && this.gear === 'N' && this.brake < 0.25 && Math.abs(this.v) < 0.3) {
-      return deny('브레이크를 밟은 상태에서 변속하세요');
     }
     this.gear = target;
     this.emit('shift', target);
@@ -212,16 +229,17 @@ export class Vehicle extends Emitter {
     }
 
     if (this.wiper > 0) this.wiperPhase += dt * (this.wiper === 1 ? 3.4 : 6.5);
+    if (this.autoBrakeT > 0) this.autoBrakeT = Math.max(0, this.autoBrakeT - dt);
 
     // 전자식 주차브레이크 자동 해제 (안전벨트 착용 + D/R + 가속 페달)
     if (this.epb && this.power && (this.gear === 'D' || this.gear === 'R') && this.throttle > 0.12) {
-      if (this.seatbelt) {
+      if (this.seatbelt || (this.easy && !this.beltRequired)) {
         this.epb = false;
         this.emit('epb', false);
-        this.message('전자식 주차 브레이크가 자동으로 풀렸습니다');
+        this.message(this.seatbelt ? '전자식 주차 브레이크가 자동으로 풀렸습니다' : '주차 브레이크를 풀었어요. 안전벨트도 매세요!');
       } else if (performance.now() - this.lastShiftMsgT > 4000) {
         this.lastShiftMsgT = performance.now();
-        this.message('주차 브레이크가 걸려 있습니다 (안전벨트를 매면 자동 해제)', 'warn');
+        this.message('안전벨트를 매야 주차 브레이크가 풀려요 (시험 중 안전벨트 없이 출발하면 실격)', 'warn');
       }
     }
 
@@ -255,7 +273,7 @@ export class Vehicle extends Emitter {
     F += -m * G * Math.sin(this.pitch);
 
     const resist = 0.012 * m * G + 0.42 * v * v;
-    let brakeF = Math.pow(this.brake, 1.2) * 19000;
+    let brakeF = Math.pow(Math.max(this.brake, this.autoBrakeT > 0 ? 1 : 0), 1.2) * 19000;
     if (this.gear === 'P' || this.epb) brakeF = Math.max(brakeF, 40000);
     if (this.hillHold && this.brake > 0.2 && Math.abs(v) < 0.05) brakeF = Math.max(brakeF, 30000);
 

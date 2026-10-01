@@ -9,6 +9,7 @@ import { Input } from './input.js';
 import { Exam } from './exam.js';
 import { AudioSys } from './audio.js';
 import { UI } from './ui.js';
+import { TouchPad } from './touchpad.js';
 import { storage, clamp } from './util.js';
 
 const DEFAULT_SETTINGS = {
@@ -24,6 +25,8 @@ const DEFAULT_SETTINGS = {
   footCal: null,
   padMap: null,
   seatOffset: 0,
+  easy: true,        // 간편 조작: 브레이크 없이 시동/변속해도 자동으로 브레이크를 밟아 줌
+  touchPad: 'auto',  // 화면 조작 버튼: auto(터치 기기) / on / off
 };
 
 const app = {
@@ -69,6 +72,7 @@ const car = new Vehicle(course);
 app.car = car;
 car.placeAt(course.zones.startPos);
 car.hillHold = app.settings.hillHold;
+car.easy = app.settings.easy;
 
 // 운전석 시점 리그 (VR에서는 머리 위치가 여기에 맞춰짐)
 const rig = new THREE.Group();
@@ -174,6 +178,7 @@ const actions = {
     if (key === 'voice') { audio.voiceOn = value; if (!value && 'speechSynthesis' in window) speechSynthesis.cancel(); }
     if (key === 'sfx') audio.sfxOn = value;
     if (key === 'hillHold') car.hillHold = value;
+    if (key === 'easy') car.easy = value;
     if (key === 'quality') applyQuality();
   },
   startFootCalib() { input.startFootCalib(); },
@@ -267,6 +272,40 @@ const input = new Input(app);
 app.input = input;
 const ui = new UI(app);
 app.ui = ui;
+const touchpad = new TouchPad(app);
+app.touchpad = touchpad;
+
+// ───────── 지금 쓰는 입력 장치에 맞춘 조작 안내
+app.inputMode = () => {
+  if (renderer.xr.isPresenting) return 'xr';
+  if (touchpad.shouldShow()) return 'touch';
+  if (input.padNames.length) return 'pad';
+  return 'keyboard';
+};
+const TIPS = {
+  brake: { xr: '왼손 트리거', touch: '화면 오른쪽 아래 [브레이크] 버튼', pad: '왼쪽 트리거(LT) 또는 브레이크 페달', keyboard: '↓ 키' },
+  accel: { xr: '오른손 트리거', touch: '[가속] 버튼', pad: '오른쪽 트리거(RT) 또는 가속 페달', keyboard: '↑ 키' },
+  start: { xr: 'START 버튼(손끝으로) 또는 오른손 스틱 누르기', touch: '[START] 버튼', pad: 'A 버튼', keyboard: 'Enter 키' },
+  belt: { xr: '시트 옆 빨간 [안전벨트] 버튼(손끝으로)', touch: '[벨트] 버튼', pad: '십자키 ←', keyboard: 'B 키' },
+  epb: { xr: '콘솔 [EPB] 버튼 또는 왼손 스틱 누르기', touch: '[EPB] 버튼', pad: 'B 버튼', keyboard: 'Space 키' },
+  hazard: { xr: '왼손 Y 버튼', touch: '[비상등] 버튼', pad: 'X 버튼', keyboard: 'F 키' },
+  turnL: { xr: '왼손 X 버튼', touch: '[◀ 깜빡] 버튼', pad: 'LB 버튼', keyboard: 'Q 키' },
+  turnR: { xr: '오른손 A 버튼', touch: '[깜빡 ▶] 버튼', pad: 'RB 버튼', keyboard: 'E 키' },
+  gear: { xr: '콘솔 P·R·N·D 버튼 또는 오른손 스틱 앞/뒤', touch: '[P][R][N][D] 버튼', pad: '십자키 ↑/↓', keyboard: 'P·R·N·D 키' },
+  lights: { xr: '왼손 스틱 앞/뒤', touch: '[전조등]·[상향] 버튼', pad: '십자키 →(전조등)', keyboard: 'L(전조등)·K(상향등) 키' },
+  wiper: { xr: '오른손 B 버튼', touch: '[와이퍼] 버튼', pad: 'Y 버튼', keyboard: 'W 키' },
+};
+app.tip = (key) => {
+  const mode = app.inputMode();
+  if (key === 'brake' && mode === 'xr' && app.settings.footMode !== 'off' && app.settings.footCal) return '발(브레이크 쪽으로 돌려 밟기) 또는 왼손 트리거';
+  if (key === 'prep') {
+    const easy = app.settings.easy ? ' (간편 조작: START만 눌러도 브레이크가 자동으로 밟혀요)' : '';
+    return `① 안전벨트: ${app.tip('belt')}  ② 시동: 브레이크(${app.tip('brake')})를 밟은 채 ${app.tip('start')}${easy}`;
+  }
+  return TIPS[key]?.[mode] ?? '';
+};
+car.brakeHint = () => app.tip('brake');
+exam.tip = app.tip;
 
 // ───────── 시점 (PC)
 const look = { yaw: 0, pitch: -0.08 };
@@ -453,6 +492,7 @@ function loop() {
   audio.update(car, dt);
   if (!xr) updateDesktopCamera(dt);
   ui.update();
+  touchpad.render();
   cockpit.renderMirrors(renderer, scene, xr);
   renderer.render(scene, camera);
   frames++;

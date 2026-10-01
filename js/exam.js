@@ -35,6 +35,7 @@ export const DQ_RULES = [
 const DEVICE_TASKS = {
   lights: () => ({
     name: '전조등',
+    tip: 'lights',
     steps: [
       { say: '전조등을 상향등으로 켜십시오.', check: (c) => c.lights === 2 },
       { say: '하향등으로 바꾸십시오.', check: (c) => c.lights === 1 },
@@ -44,6 +45,7 @@ const DEVICE_TASKS = {
     const left = Math.random() < 0.5;
     return {
       name: '방향지시등',
+      tip: left ? 'turnL' : 'turnR',
       steps: [{
         say: left ? '좌측 방향지시등을 켜십시오.' : '우측 방향지시등을 켜십시오.',
         check: (c) => c.turn === (left ? -1 : 1),
@@ -52,12 +54,14 @@ const DEVICE_TASKS = {
   },
   wiper: () => ({
     name: '와이퍼',
+    tip: 'wiper',
     steps: [{ say: '와이퍼를 작동하십시오.', check: (c) => c.wiper > 0 }],
   }),
   gear: () => {
     const target = Math.random() < 0.6 ? 'D' : 'N';
     return {
       name: '변속기',
+      tip: 'gear',
       steps: [{
         say: `브레이크를 밟고 변속기를 ${target}로 변경하십시오.`,
         check: (c) => c.gear === target,
@@ -84,6 +88,7 @@ export class Exam extends Emitter {
     this.section = '';
     this.timerText = '';
     this.result = null;
+    this.tip = (key) => key; // main.js가 입력 장치에 맞는 안내로 바꿔 끼움
     this.resetSections();
   }
 
@@ -96,6 +101,7 @@ export class Exam extends Emitter {
     c.reset();
     c.placeAt(this.course.zones.startPos);
     this.mode = 'exam';
+    c.beltRequired = true;
     this.score = 100;
     this.penalties = [];
     this.result = null;
@@ -103,13 +109,14 @@ export class Exam extends Emitter {
     this.resetSections();
     this.setPhase('prep');
     this.say('장내기능시험을 시작합니다. 안전띠를 매고, 브레이크를 밟은 채 시동 버튼을 누르십시오.');
-    this.hint('안전띠: B 키 / 콘솔 빨간 버튼 · 시동: 브레이크 + Enter 또는 START 버튼');
+    this.hint(this.tip('prep'));
     this.emit('started', 'exam');
   }
 
   startPractice(jumpIndex = null) {
     const c = this.car;
     this.mode = 'practice';
+    c.beltRequired = false;
     this.result = null;
     this.score = 100;
     this.penalties = [];
@@ -129,7 +136,7 @@ export class Exam extends Emitter {
     this.resetSections();
     this.setPhase('course');
     this.courseStarted = true;
-    this.hint(this.car.power ? '' : '먼저 안전띠를 매고 브레이크를 밟은 채 시동을 거세요.');
+    this.hint(this.car.power ? '' : this.tip('prep'));
     this.emit('started', 'practice');
   }
 
@@ -289,13 +296,13 @@ export class Exam extends Emitter {
         this.setPhase('start');
         this.startT = 0;
         this.say('기기조작이 끝났습니다. 출발하십시오.');
-        this.hint('D로 변속하고 브레이크를 천천히 놓은 뒤 가속 페달을 살짝 밟으세요. (30초 안에 출발)');
+        this.hint(`D로 변속(${this.tip('gear')}) → 브레이크를 놓고 가속(${this.tip('accel')})을 살짝 · 30초 안에 출발`);
         return;
       }
       this.devStep = 0;
       this.devT = 0;
       this.say(this.devTask.steps[0].say);
-      this.hint(`${this.devTask.name} 조작 — 제한시간 ${STEP_LIMIT}초`);
+      this.hint(`${this.devTask.name}: ${this.tip(this.devTask.tip)} · 제한시간 ${STEP_LIMIT}초`);
       return;
     }
     this.devT += dt;
@@ -556,7 +563,7 @@ export class Exam extends Emitter {
       this.timerText = '';
       this.emit('ok', '주차 확인');
       this.say('주차 확인. 주차 브레이크를 거십시오.');
-      this.hint('EPB 버튼(스페이스) → 그 다음 다시 출발');
+      this.hint(`주차 브레이크: ${this.tip('epb')} → 그 다음 다시 출발`);
     }
     if (st.parked && !st.epbDone && inside && c.epb) {
       st.epbDone = true;
@@ -614,7 +621,7 @@ export class Exam extends Emitter {
           this.world.setAlarm(true);
           this.emit('alarm', true);
           this.say('돌발! 즉시 정지하십시오!', false);
-          this.hint('2초 안에 정지 → 3초 안에 비상등(F) → 출발할 때 비상등 끄기');
+          this.hint(`2초 안에 정지 → 3초 안에 비상등(${this.tip('hazard')}) → 출발할 때 비상등 끄기`);
         }
         break;
       case 'alarm':
@@ -685,6 +692,13 @@ export class Exam extends Emitter {
 
   practiceHints(ls, front) {
     if (this.mode !== 'practice') return;
+    const c = this.car;
+    // 아직 출발 전이면 시동/출발 방법을 계속 보여 줌
+    if (!c.power) { this.hint(this.tip('prep')); return; }
+    if (c.gear === 'P' && Math.abs(c.v) < 0.1) {
+      this.hint(`출발: D로 변속(${this.tip('gear')}) → 브레이크를 놓고 가속(${this.tip('accel')})`);
+      return;
+    }
     const z = this.course.zones;
     const near = (s, before = 25, after = 0) => front > s - before && front < s + after;
     let h = '';
@@ -695,7 +709,7 @@ export class Exam extends Emitter {
     else if (near(z.accel.s0, 10, 35)) h = '가속구간: 20km/h 이상으로 가속';
     else {
       for (const t of z.turns) {
-        if (near(t.s0, 22, 2)) { h = `${t.dir > 0 ? '우회전' : '좌회전'} 전에 ${t.dir > 0 ? '오른쪽(E)' : '왼쪽(Q)'} 방향지시등을 켜세요`; break; }
+        if (near(t.s0, 22, 2)) { h = `${t.dir > 0 ? '우회전' : '좌회전'} 전에 ${t.dir > 0 ? '오른쪽' : '왼쪽'} 방향지시등을 켜세요 (${this.tip(t.dir > 0 ? 'turnR' : 'turnL')})`; break; }
       }
     }
     if (this.sud.state === 'alarm' || this.sud.state === 'stopped' || this.sud.state === 'go') return;

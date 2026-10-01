@@ -647,7 +647,8 @@ export function updateCarVisual(model, car, dt) {
   m.turnR.color.setHex(rightOn ? 0xffa21a : 0x4a2a00);
   m.drl.color.setHex(car.power ? 0xffffff : 0x8a8f99);
   m.head.color.setHex(car.lights === 2 ? 0xeaf6ff : car.lights === 1 ? 0xd6e6ff : 0x9aa4b4);
-  const braking = car.brake > 0.05 || car.epbHolding;
+  const brakeVis = Math.max(car.brake, car.autoBrakeT > 0 ? 1 : 0);
+  const braking = brakeVis > 0.05 || car.epbHolding;
   m.brake.color.setHex(braking && car.power ? 0xff1b2d : 0x4a0a10);
   m.tail.color.setHex(car.lights > 0 || car.power ? 0xc0101e : 0x5a0a10);
   m.reverse.color.setHex(car.gear === 'R' && car.power ? 0xffffff : 0x777777);
@@ -663,6 +664,6 @@ export function updateCarVisual(model, car, dt) {
     it.stalkL.rotation.z = car.lights === 2 ? -0.12 : 0;
     it.stalkR.rotation.x = -car.wiper * 0.12;
     it.accelPivot.rotation.x = -car.throttle * 0.35;
-    it.brakePivot.rotation.x = -car.brake * 0.4;
+    it.brakePivot.rotation.x = -brakeVis * 0.4;
   }
 }

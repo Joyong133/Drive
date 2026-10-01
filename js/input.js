@@ -611,11 +611,29 @@ export class Input {
     }
   }
 
+  // ───────── 화면 조작 버튼 (터치/마우스)
+  updateTouch(dt, out) {
+    const tp = this.app.touchpad;
+    if (!tp) return;
+    tp.tick(dt);
+    if (!tp.visible) return;
+    out.throttle = Math.max(out.throttle, tp.throttle);
+    out.brake = Math.max(out.brake, tp.brake);
+    if (tp.throttle > 0.05 || tp.brake > 0.05) this.lastSource = 'touch';
+    if (tp.wheelHeld || tp.wheelDelta) {
+      out.wheelDelta += tp.wheelDelta;
+      tp.wheelDelta = 0;
+      out.grabbing = true;
+      out.activeSteer = true;
+    }
+  }
+
   update(dt) {
     const out = { throttle: 0, brake: 0, steerRate: 0, wheelDelta: 0, wheelAbs: null, wheelTarget: null, activeSteer: false, grabbing: false };
     this.updateKeyboard(dt, out);
     this.updatePads(dt, out);
     if (this.renderer.xr.isPresenting) this.updateXR(dt, out);
+    this.updateTouch(dt, out);
 
     const car = this.car;
     car.throttle = clamp(out.throttle, 0, 1);
