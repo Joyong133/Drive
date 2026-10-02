@@ -7,6 +7,8 @@ import { Vehicle } from './vehicle.js';
 import { Cockpit, LAYER_HUD } from './cockpit.js';
 import { Input } from './input.js';
 import { Exam } from './exam.js';
+import { createCityModel, buildCity } from './city.js';
+import { RoadExam } from './roadtest.js';
 import { AudioSys } from './audio.js';
 import { UI } from './ui.js';
 import { TouchPad } from './touchpad.js';
@@ -27,7 +29,13 @@ const DEFAULT_SETTINGS = {
   seatOffset: 0,
   easy: true,        // 간편 조작: 브레이크 없이 시동/변속해도 자동으로 브레이크를 밟아 줌
   touchPad: 'auto',  // 화면 조작 버튼: auto(터치 기기) / on / off
+  steerRange: 'normal', // 핸들 감도: quick(한쪽 3/4바퀴) / normal(1바퀴) / real(1.25바퀴)
+  autoCenter: true,     // 손을 떼면 핸들이 천천히 가운데로 복귀
 };
+const STEER_RANGE = { quick: 270, normal: 360, real: 450 };
+function applySteerRange() {
+  CAR.maxWheelAngle = ((STEER_RANGE[app.settings.steerRange] || 360) * Math.PI) / 180;
+}
 
 const app = {
   started: false,
@@ -64,6 +72,12 @@ app.course = course;
 const world = buildWorld(scene, course, renderer);
 app.world = world;
 
+// 도로주행용 도시 (평소엔 숨겨 둠)
+const cityModel = createCityModel();
+const city = buildCity(scene, cityModel);
+app.city = city;
+app.map = 'course';
+
 const model = buildCarModel({ color: 0x1f6fff, interior: true, plate: '12가 2026' });
 scene.add(model.root);
 app.model = model;
@@ -73,6 +87,7 @@ app.car = car;
 car.placeAt(course.zones.startPos);
 car.hillHold = app.settings.hillHold;
 car.easy = app.settings.easy;
+applySteerRange();
 
 // 운전석 시점 리그 (VR에서는 머리 위치가 여기에 맞춰짐)
 const rig = new THREE.Group();
@@ -90,7 +105,33 @@ audio.sfxOn = app.settings.sfx;
 app.audio = audio;
 
 const exam = new Exam({ car, course, world });
-app.exam = exam;
+const roadExam = new RoadExam({ car, city });
+app.exams = { course: exam, road: roadExam };
+app.exam = exam; // 지금 진행 중인 시험(장내 또는 도로주행)
+
+// 장내 코스 ↔ 도시 전환
+function setMap(name) {
+  if (app.map === name) return;
+  app.map = name;
+  world.root.visible = name === 'course';
+  city.root.visible = name === 'city';
+  car.course = name === 'course' ? course : null;
+  world.setAlarm(false);
+  audio.alarm(false);
+}
+const COURSE_BOUNDS = car.bounds;
+function useCourse() {
+  roadExam.stop();
+  setMap('course');
+  car.bounds = COURSE_BOUNDS;
+  app.exam = exam;
+}
+function useCity() {
+  exam.stop();
+  setMap('city');
+  car.bounds = cityModel.bounds;
+  app.exam = roadExam;
+}
 
 const cockpit = new Cockpit({ model, car, exam, app });
 app.cockpit = cockpit;
@@ -114,7 +155,7 @@ const guide = (() => {
   const lines = [make(), make()];
   return {
     update() {
-      const show = app.settings.guide && exam.mode !== 'exam' && car.power && (car.gear === 'D' || car.gear === 'R') && Math.abs(car.v) < 7;
+      const show = app.settings.guide && !app.exam.scoring && car.power && (car.gear === 'D' || car.gear === 'R') && Math.abs(car.v) < 7;
       lines.forEach((l) => { l.visible = show; });
       if (!show) return;
       const rev = car.gear === 'R';
@@ -156,18 +197,29 @@ const actions = {
   startExam() {
     app.paused = false;
     cockpit.page = 'home';
+    useCourse();
     exam.startExam();
   },
   startPractice() {
     cockpit.page = 'home';
-    exam.startPractice();
+    const fresh = app.map !== 'course';
+    useCourse();
+    exam.startPractice(fresh ? 0 : null);
   },
   startDrill() {
     cockpit.page = 'home';
+    if (app.map !== 'course') { useCourse(); exam.startPractice(0); }
     exam.startDeviceDrill();
   },
   jump(i) {
+    useCourse();
     exam.startPractice(i);
+  },
+  startRoad(practice = false) {
+    app.paused = false;
+    cockpit.page = 'home';
+    useCity();
+    roadExam.start(practice);
   },
   recenter() {
     recenter();
@@ -179,6 +231,7 @@ const actions = {
     if (key === 'sfx') audio.sfxOn = value;
     if (key === 'hillHold') car.hillHold = value;
     if (key === 'easy') car.easy = value;
+    if (key === 'steerRange') applySteerRange();
     if (key === 'quality') applyQuality();
   },
   startFootCalib() { input.startFootCalib(); },
@@ -236,8 +289,15 @@ car.on('epb', () => audio.chime('button'));
 car.on('denied', () => { audio.chime('warn'); input.hapticAll(0.3, 60); });
 for (const ev of ['turn', 'hazard', 'lights', 'wiper']) car.on(ev, () => audio.chime('button'));
 
+for (const ex of [exam, roadExam]) wireExam(ex);
+function wireExam(exam) {
 exam.on('say', (text, speak) => { ui.setInstruction(text); if (speak) audio.speak(text); });
 exam.on('hint', (text) => ui.setHint(text));
+exam.on('notice', (text) => {
+  ui.toast(text, 'bad');
+  cockpit.showFlash(text, '#b8860b', 2.2);
+  audio.chime('warn');
+});
 exam.on('penalty', (pts, reason) => {
   ui.toast(`-${pts}점 · ${reason}`, 'bad');
   cockpit.showFlash(`-${pts}점  ${reason}`, '#d4314a', 2.8);
@@ -263,6 +323,7 @@ exam.on('result', (r) => {
   ui.showResult(r);
 });
 exam.on('started', () => { if (ui.modalKind === 'result') ui.closeModal(); });
+}
 
 app.scene = scene;
 app.camera = camera;
@@ -306,6 +367,7 @@ app.tip = (key) => {
 };
 car.brakeHint = () => app.tip('brake');
 exam.tip = app.tip;
+roadExam.tip = app.tip;
 
 // ───────── 시점 (PC)
 const look = { yaw: 0, pitch: -0.08 };
@@ -469,6 +531,8 @@ function beginSession(mode) {
   document.activeElement?.blur?.();
   ui.hideStart();
   if (mode === 'exam') actions.startExam();
+  else if (mode === 'road') actions.startRoad(false);
+  else if (mode === 'roadPractice') actions.startRoad(true);
   else actions.startPractice();
 }
 
@@ -483,9 +547,13 @@ function loop() {
   input.update(dt);
   if (app.started && !app.paused) {
     car.update(dt);
-    exam.update(dt);
   }
-  world.update(dt, car);
+  if (app.map === 'city') {
+    if (app.started && !app.paused) city.update(dt, car);
+  } else {
+    world.update(dt, car);
+  }
+  if (app.started && !app.paused) app.exam.update(dt);
   updateCarVisual(model, car, dt);
   guide.update();
   cockpit.update(dt, xr);

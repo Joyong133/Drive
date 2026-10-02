@@ -217,7 +217,7 @@ export class Exam extends Emitter {
   end(pass, reason = '') {
     this.world.setAlarm(false);
     this.emit('alarm', false);
-    this.result = { pass, score: Math.max(0, this.score), reason, penalties: [...this.penalties] };
+    this.result = { pass, score: Math.max(0, this.score), reason, penalties: [...this.penalties], kind: 'course' };
     this.setPhase('result');
     if (pass) this.say(`합격입니다! 점수는 ${this.score}점입니다. 축하합니다!`);
     else this.say(`불합격입니다. ${reason}.`);
@@ -735,7 +735,12 @@ export class Exam extends Emitter {
   }
 
   getStatus() {
+    const label = this.mode === 'exam' ? `시험 ${this.score}점` : this.mode === 'practice' ? '연습 주행'
+      : this.mode === 'drill' ? '기기조작 연습' : '대기';
     return {
+      kind: 'course',
+      label,
+      scoring: this.scoring,
       mode: this.mode,
       phase: this.phase,
       score: this.score,

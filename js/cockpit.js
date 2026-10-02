@@ -33,10 +33,12 @@ function wrapText(ctx, text, maxW) {
 }
 
 export class Cockpit {
+  get exam() { return this.app.exam; } // 진행 중인 시험(장내/도로주행)
+
   constructor({ model, car, exam, app }) {
     this.model = model;
     this.car = car;
-    this.exam = exam;
+    void exam;
     this.app = app;
     const it = model.interior;
 
@@ -205,11 +207,23 @@ export class Cockpit {
     g.textAlign = 'left';
     g.font = `700 24px ${FONT}`;
     g.fillStyle = '#9fb0d6';
-    let info = '자유 주행';
-    if (st.mode === 'exam') info = `시험 ${st.score}점`;
-    else if (st.mode === 'practice') info = '연습 주행';
-    else if (st.mode === 'drill') info = '기기조작 연습';
-    g.fillText(info, 530, 238);
+    g.fillText(st.label === '대기' ? '자유 주행' : st.label, 530, 238);
+    // 제한속도 표지 (도로주행)
+    if (st.limit) {
+      const over = c.kmh > st.limit + 0.5;
+      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(300, 60, 34, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#d4202a'; g.lineWidth = 8; g.beginPath(); g.arc(300, 60, 30, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = over ? '#d4202a' : '#111'; g.font = `900 28px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(String(st.limit), 300, 62);
+      g.textBaseline = 'alphabetic';
+    }
+    // 내비게이션 (도로주행)
+    if (st.timer && st.kind === 'road') {
+      g.textAlign = 'center';
+      g.fillStyle = '#3ddcff';
+      g.font = `900 30px ${FONT}`;
+      g.fillText(st.timer, 300, 150);
+    }
     if (st.section) { g.fillStyle = '#e8eefc'; g.fillText(st.section, 640, 238); }
     this.clusterTex.needsUpdate = true;
   }
@@ -236,10 +250,7 @@ export class Cockpit {
     g.fillText('VR 운전면허 마스터', 28, 33);
     g.textAlign = 'right';
     g.fillStyle = '#e8eefc';
-    let modeText = '대기';
-    if (st.mode === 'exam') modeText = st.phase === 'result' ? '시험 종료' : `시험 중 · ${st.score}점`;
-    else if (st.mode === 'practice') modeText = '연습 주행';
-    else if (st.mode === 'drill') modeText = '기기조작 연습';
+    const modeText = st.phase === 'result' && st.scoring ? '시험 종료' : st.label;
     g.fillText(modeText, W - 28, 33);
 
     const calib = this.app.input?.calib;
@@ -270,27 +281,76 @@ export class Cockpit {
   }
 
   drawHome(g, st) {
-    const bw = 300, bh = 120, gap = 22, x0 = (SCREEN_W - (bw * 3 + gap * 2)) / 2, y0 = 92;
+    const bw = 300, bh = 84, gap = 14, x0 = (SCREEN_W - (bw * 3 + gap * 2)) / 2, y0 = 80;
     const A = this.app.actions;
-    this.btn(g, 'exam', '장내기능시험\n시작', x0, y0, bw, bh, { primary: true, action: () => A.startExam() });
-    this.btn(g, 'practice', '연습 주행', x0 + bw + gap, y0, bw, bh, { action: () => A.startPractice() });
-    this.btn(g, 'drill', '기기조작 연습', x0 + (bw + gap) * 2, y0, bw, bh, { action: () => A.startDrill() });
-    this.btn(g, 'jump', '구간 이동', x0, y0 + bh + gap, bw, bh, { action: () => { this.page = 'jump'; } });
-    this.btn(g, 'recenter', '시점 재설정', x0 + bw + gap, y0 + bh + gap, bw, bh, { action: () => A.recenter() });
-    this.btn(g, 'settings', '설정 · 발 보정', x0 + (bw + gap) * 2, y0 + bh + gap, bw, bh, { action: () => { this.page = 'settings'; } });
+    const col = (i) => x0 + (bw + gap) * i;
+    const row = (j) => y0 + (bh + gap) * j;
+    this.btn(g, 'exam', '장내기능시험', col(0), row(0), bw, bh, { primary: true, small: true, action: () => A.startExam() });
+    this.btn(g, 'practice', '장내 연습', col(1), row(0), bw, bh, { small: true, action: () => A.startPractice() });
+    this.btn(g, 'drill', '기기조작 연습', col(2), row(0), bw, bh, { small: true, action: () => A.startDrill() });
+    this.btn(g, 'road', '도로주행 시험', col(0), row(1), bw, bh, { primary: true, small: true, action: () => A.startRoad(false) });
+    this.btn(g, 'roadPractice', '도로주행 연습', col(1), row(1), bw, bh, { small: true, action: () => A.startRoad(true) });
+    this.btn(g, 'jump', '장내 구간 이동', col(2), row(1), bw, bh, { small: true, action: () => { this.page = 'jump'; } });
+    this.btn(g, 'recenter', '시점 재설정', col(0), row(2), bw, bh, { small: true, action: () => A.recenter() });
+    this.btn(g, 'settings', '설정 · 발 보정', col(1), row(2), bw, bh, { small: true, action: () => { this.page = 'settings'; } });
+    this.btn(g, 'menuHelp', '조작 안내', col(2), row(2), bw, bh, { small: true, action: () => { this.app.exam.say?.(this.app.tip('prep')); } });
 
-    // 현재 안내
+    // 현재 안내 (+ 도로주행이면 지도)
+    const boxY = row(3) + 4, boxH = SCREEN_H - boxY - 16;
+    const mapW = st.kind === 'road' ? 250 : 0;
     g.fillStyle = 'rgba(255,255,255,0.05)';
-    roundRect(g, x0, 372, SCREEN_W - x0 * 2, 200, 18); g.fill();
+    roundRect(g, x0, boxY, SCREEN_W - x0 * 2, boxH, 18); g.fill();
     g.textAlign = 'left';
     g.textBaseline = 'top';
     g.fillStyle = '#9fb0d6';
-    g.font = `700 26px ${FONT}`;
-    g.fillText(st.section ? `현재 구간: ${st.section}${st.timer ? ' · ' + st.timer : ''}` : '안내', x0 + 22, 388);
+    g.font = `700 24px ${FONT}`;
+    g.fillText(st.section ? `${st.section}${st.timer ? ' · ' + st.timer : ''}` : '안내', x0 + 20, boxY + 12, SCREEN_W - x0 * 2 - mapW - 40);
     g.fillStyle = '#eef3ff';
-    g.font = `700 32px ${FONT}`;
-    const lines = wrapText(g, st.instruction || '시작할 모드를 선택하세요. 컨트롤러로 화면을 직접 누르거나, P단에서 화면을 가리키고 트리거를 당기세요.', SCREEN_W - x0 * 2 - 44);
-    lines.slice(0, 4).forEach((l, i) => g.fillText(l, x0 + 22, 428 + i * 38));
+    g.font = `700 28px ${FONT}`;
+    const lines = wrapText(g, st.instruction || '시작할 모드를 선택하세요. 컨트롤러로 화면을 직접 누르거나, P단에서 화면을 가리키고 트리거를 당기세요.', SCREEN_W - x0 * 2 - mapW - 44);
+    lines.slice(0, 3).forEach((l, i) => g.fillText(l, x0 + 20, boxY + 48 + i * 34));
+    if (mapW) this.drawMinimap(g, SCREEN_W - x0 - mapW - 8, boxY + 8, mapW, boxH - 16, st);
+  }
+
+  // 도로주행 지도: 도로, 남은 경로, 내 차
+  drawMinimap(g, x, y, w, h, st) {
+    const city = this.app.city;
+    if (!city) return;
+    const X0 = -165, X1 = 165, Z0 = -195, Z1 = 135;
+    const sc = Math.min(w / (X1 - X0), h / (Z1 - Z0));
+    const ox = x + (w - (X1 - X0) * sc) / 2, oz = y + (h - (Z1 - Z0) * sc) / 2;
+    const P = (px, pz) => [ox + (px - X0) * sc, oz + (pz - Z0) * sc];
+    g.save();
+    g.fillStyle = '#0d1424';
+    roundRect(g, x, y, w, h, 12); g.fill();
+    g.strokeStyle = '#4b5a78';
+    g.lineCap = 'round';
+    for (const r of city.model.roads) {
+      g.lineWidth = r.lanes * 3;
+      const [ax, az] = r.axis === 'x' ? P(r.from, r.c) : P(r.c, r.from);
+      const [bx, bz] = r.axis === 'x' ? P(r.to, r.c) : P(r.c, r.to);
+      g.beginPath(); g.moveTo(ax, az); g.lineTo(bx, bz); g.stroke();
+    }
+    // 남은 경로
+    const route = this.app.exams.road;
+    const legs = city.routeLegs || [];
+    g.strokeStyle = '#3ddcff';
+    g.lineWidth = 4;
+    g.beginPath();
+    legs.forEach((p, i) => { if (i >= (st.leg || 0)) { const [px, pz] = P(p.x0, p.z0); const [qx, qz] = P(p.x1, p.z1); g.moveTo(px, pz); g.lineTo(qx, qz); } });
+    g.stroke();
+    // 도착
+    const [dx, dz] = P(-115, -8);
+    g.fillStyle = '#2f7bff'; g.beginPath(); g.arc(dx, dz, 6, 0, Math.PI * 2); g.fill();
+    // 내 차 (화살표)
+    const c = this.car;
+    const [cx, cz] = P(c.x, c.z);
+    g.translate(cx, cz);
+    g.rotate(c.heading);
+    g.fillStyle = '#ffcc33';
+    g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 7); g.lineTo(0, 3); g.lineTo(-6, 7); g.closePath(); g.fill();
+    g.restore();
+    void route;
   }
 
   drawJump(g) {
@@ -324,12 +384,9 @@ export class Cockpit {
     const y4 = 86 + (bh + gap) * 3 + 8;
     this.btn(g, 'back', '← 뒤로', x0, y4, bw, 92, { action: () => { this.page = 'home'; } });
     this.btn(g, 'easy', `간편 조작(자동 브레이크)\n${S.easy ? '켬' : '끔 (실전처럼)'}`, x0 + bw + gap, y4, bw, 92, { on: S.easy, small: true, action: () => A.setSetting('easy', !S.easy) });
-    g.fillStyle = '#9fb0d6';
-    g.font = `700 22px ${FONT}`;
-    g.textAlign = 'left';
-    g.textBaseline = 'middle';
-    g.fillText('발 컨트롤러:', x0 + (bw + gap) * 2, y4 + 30);
-    g.fillText('발등에 묶고 뒤꿈치 축으로', x0 + (bw + gap) * 2, y4 + 60);
+    const steerLabel = { quick: '빠름', normal: '보통', real: '실제 차' }[S.steerRange] || '보통';
+    const nextSteer = { quick: 'normal', normal: 'real', real: 'quick' }[S.steerRange] || 'normal';
+    this.btn(g, 'steer', `핸들 감도\n${steerLabel}`, x0 + (bw + gap) * 2, y4, bw, 92, { small: true, action: () => A.setSetting('steerRange', nextSteer) });
   }
 
   drawCalibPage(g, cal) {
@@ -388,8 +445,9 @@ export class Cockpit {
       g.fillText(p.reason, 210, 296 + i * 36);
     });
     if (!list.length) { g.fillStyle = '#eef3ff'; g.fillText('감점 없이 완벽한 주행이었어요!', 120, 300); }
-    this.btn(g, 'again', '다시 시험', 120, 470, 360, 100, { primary: true, action: () => A.startExam() });
-    this.btn(g, 'topractice', '연습 주행', SCREEN_W - 480, 470, 360, 100, { action: () => A.startPractice() });
+    const road = r.kind === 'road';
+    this.btn(g, 'again', road ? '도로주행 다시' : '다시 시험', 120, 470, 360, 100, { primary: true, action: () => (road ? A.startRoad(false) : A.startExam()) });
+    this.btn(g, 'topractice', road ? '도로주행 연습' : '연습 주행', SCREEN_W - 480, 470, 360, 100, { action: () => (road ? A.startRoad(true) : A.startPractice()) });
   }
 
   hitTest(uv, list = this.screenButtons) {
@@ -430,8 +488,8 @@ export class Cockpit {
     g.textBaseline = 'middle';
     g.textAlign = 'left';
     g.font = `900 34px ${FONT}`;
-    g.fillStyle = st.mode === 'exam' ? '#ffcc33' : '#3ddcff';
-    const tag = st.mode === 'exam' ? `시험 ${st.score}점` : st.mode === 'practice' ? '연습' : st.mode === 'drill' ? '기기조작 연습' : '대기';
+    g.fillStyle = st.scoring ? '#ffcc33' : '#3ddcff';
+    const tag = st.label;
     g.fillText(tag, 30, 40);
     g.fillStyle = '#c9d6f2';
     g.font = `700 30px ${FONT}`;
@@ -565,7 +623,7 @@ export class Cockpit {
       // 바뀐 게 있을 때만 다시 그림 (VR에서 텍스처 업로드 비용 절약)
       const c = this.car;
       const st = this.exam.getStatus();
-      const clusterKey = [Math.round(c.kmh), c.gear, c.blinkOn, c.turn, c.hazard, c.lights, c.seatbelt, c.epb, c.power, c.wiper, st.mode, st.score, st.section].join('|');
+      const clusterKey = [Math.round(c.kmh), c.gear, c.blinkOn, c.turn, c.hazard, c.lights, c.seatbelt, c.epb, c.power, c.wiper, st.label, st.section, st.limit, st.timer].join('|');
       if (clusterKey !== this.clusterKey) {
         this.clusterKey = clusterKey;
         this.drawCluster();
@@ -576,8 +634,9 @@ export class Cockpit {
       const screenKey = [
         this.page, st.mode, st.phase, st.score, st.section, st.timer, st.instruction, !!st.result,
         hoverBtn, this.pressedId, JSON.stringify(this.app.settings).length, this.app.settings.footMode,
-        this.app.settings.voice, this.app.settings.guide, this.app.settings.rearCam, this.app.settings.mirrors, this.app.settings.easy,
+        this.app.settings.voice, this.app.settings.guide, this.app.settings.rearCam, this.app.settings.mirrors, this.app.settings.easy, this.app.settings.steerRange,
         cal ? `${cal.active}${cal.stepIndex}${cal.prompt}${cal.error}${cal.done}${meters}` : '',
+        st.kind === 'road' && this.page === 'home' ? `${Math.round(c.x / 3)},${Math.round(c.z / 3)},${Math.round(c.heading * 8)},${st.leg}` : '',
       ].join('|');
       if (screenKey !== this.screenKey) {
         this.screenKey = screenKey;

@@ -5,12 +5,13 @@ import { heightAt } from './course.js';
 
 const G = 9.81;
 const GEARS = ['P', 'R', 'N', 'D'];
-const BOUNDS = { x0: -45, x1: 175, z0: -118, z1: 58 };
+const BOUNDS = { x0: -45, x1: 175, z0: -118, z1: 58 }; // 장내 코스 범위 (도로주행은 도시 범위를 씀)
 
 export class Vehicle extends Emitter {
   constructor(course) {
     super();
-    this.course = course;
+    this.course = course;   // 장내 코스 (도로주행 중에는 null)
+    this.bounds = BOUNDS;
     this.mass = 2050;
     this.maxSteer = 0.6; // 앞바퀴 최대 조향각(약 34°)
     this.hillHold = false; // 시험 연습용: 언덕 밀림 방지 끔
@@ -62,6 +63,15 @@ export class Vehicle extends Emitter {
     this.routeIdx = -1;
     this.lap = s > this.course.total - 30 ? -1 : 0;
     this._prevS = null;
+    this.updateHeights();
+    this.updateRoute();
+  }
+
+  // 도로주행: 월드 좌표에 바로 배치
+  placeXZ(x, z, heading) {
+    this.x = x; this.z = z; this.heading = heading;
+    this.v = 0; this.steer = 0; this.wheelAngle = 0;
+    this.turn = 0; this.turnArmed = false;
     this.updateHeights();
     this.updateRoute();
   }
@@ -301,9 +311,10 @@ export class Vehicle extends Emitter {
     this.heading = hd + dh;
     let nx = rx + Math.sin(this.heading) * half;
     let nz = rz - Math.cos(this.heading) * half;
-    if (nx < BOUNDS.x0 || nx > BOUNDS.x1 || nz < BOUNDS.z0 || nz > BOUNDS.z1) {
-      nx = clamp(nx, BOUNDS.x0, BOUNDS.x1);
-      nz = clamp(nz, BOUNDS.z0, BOUNDS.z1);
+    const B = this.bounds;
+    if (nx < B.x0 || nx > B.x1 || nz < B.z0 || nz > B.z1) {
+      nx = clamp(nx, B.x0, B.x1);
+      nz = clamp(nz, B.z0, B.z1);
       this.v = 0;
     }
     this.x = nx; this.z = nz;
@@ -315,7 +326,8 @@ export class Vehicle extends Emitter {
     const half = CAR.wheelbase / 2;
     const fx = this.x + Math.sin(this.heading) * half, fz = this.z - Math.cos(this.heading) * half;
     const rx = this.x - Math.sin(this.heading) * half, rz = this.z + Math.cos(this.heading) * half;
-    const hf = heightAt(fx, fz), hr = heightAt(rx, rz);
+    const hAt = this.course ? heightAt : () => 0;
+    const hf = hAt(fx, fz), hr = hAt(rx, rz);
     this.y = (hf + hr) / 2;
     this.pitch = Math.atan2(hf - hr, CAR.wheelbase);
   }
@@ -323,6 +335,7 @@ export class Vehicle extends Emitter {
   // 차 중심의 경로 좌표 (s: 누적 거리, 바퀴 수 반영한 sAbs)
   updateRoute() {
     const c = this.course;
+    if (!c) return;
     const p = c.project(this.x, this.z, this.routeIdx);
     if (this._prevS != null) {
       const ds = p.s - this._prevS;
@@ -348,11 +361,13 @@ export class Vehicle extends Emitter {
   }
 
   frontS() {
+    if (!this.course) return 0;
     const f = this.forward;
     return this.projectNear({ x: this.x + f.x * (CAR.length / 2), z: this.z + f.z * (CAR.length / 2) }).s;
   }
 
   rearS() {
+    if (!this.course) return 0;
     const f = this.forward;
     return this.projectNear({ x: this.x - f.x * (CAR.length / 2), z: this.z - f.z * (CAR.length / 2) }).s;
   }

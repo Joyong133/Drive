@@ -605,9 +605,18 @@ export class Input {
     if (up || down) this.lastSource = 'keyboard';
     const left = !paused && k.has('ArrowLeft');
     const right = !paused && k.has('ArrowRight');
-    if (left || right) {
-      out.steerRate += ((right ? 1 : 0) - (left ? 1 : 0)) * 3.4;
+    const dir = (right ? 1 : 0) - (left ? 1 : 0);
+    if (dir) {
+      // 처음엔 천천히(미세 조정), 계속 누르면 점점 빠르게(깊게 꺾기)
+      this.kbSteerT = this.kbSteerDir === dir ? (this.kbSteerT || 0) + dt : 0;
+      this.kbSteerDir = dir;
+      let rate = 1.4 + Math.min(this.kbSteerT, 0.8) * 4.5;
+      // 반대쪽으로 꺾여 있으면 가운데로 빨리 돌아오게
+      if (Math.sign(this.car.wheelAngle) === -dir && Math.abs(this.car.wheelAngle) > 0.2) rate = Math.max(rate, 5.5);
+      out.steerRate += dir * rate;
       out.activeSteer = true;
+    } else {
+      this.kbSteerDir = 0;
     }
   }
 
@@ -621,7 +630,8 @@ export class Input {
     out.brake = Math.max(out.brake, tp.brake);
     if (tp.throttle > 0.05 || tp.brake > 0.05) this.lastSource = 'touch';
     if (tp.wheelHeld || tp.wheelDelta) {
-      out.wheelDelta += tp.wheelDelta;
+      // 손가락으로 조금만 돌려도 충분히 꺾이도록 1.5배
+      out.wheelDelta += tp.wheelDelta * 1.5;
       tp.wheelDelta = 0;
       out.grabbing = true;
       out.activeSteer = true;
@@ -644,9 +654,11 @@ export class Input {
     else if (out.wheelAbs != null) w = out.wheelAbs;
     else if (out.wheelTarget != null) w = approach(w, out.wheelTarget, dt * 9);
     w += out.steerRate * dt;
-    if (!out.activeSteer && Math.abs(car.v) > 0.3) {
-      // 주행 중 손을 놓으면 핸들이 스스로 가운데로 돌아옴
-      w *= Math.exp(-0.32 * Math.min(Math.abs(car.v), 8) * dt);
+    // 주행 중 손을 놓으면 핸들이 천천히 가운데로 돌아옴.
+    // 다시 잡으려고 잠깐 놓은 사이(0.7초)에는 돌아가지 않아서 깊게 꺾을 때 튕기지 않음
+    this.steerIdleT = out.activeSteer ? 0 : (this.steerIdleT || 0) + dt;
+    if (this.app.settings.autoCenter && this.steerIdleT > 0.7 && Math.abs(car.v) > 0.5) {
+      w *= Math.exp(-0.12 * Math.min(Math.abs(car.v), 8) * dt);
     }
     car.wheelAngle = clamp(w, -CAR.maxWheelAngle, CAR.maxWheelAngle);
     this.grabbing = out.grabbing;

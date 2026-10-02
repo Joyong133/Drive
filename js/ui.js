@@ -1,5 +1,6 @@
 // PC 화면용 메뉴·HUD·설정·보정 화면 (VR 안에서는 차량 화면과 HUD를 사용)
 import { RULES, DQ_RULES, PASS_SCORE } from './exam.js';
+import { ROAD_RULES, ROAD_DQ, ROAD_PASS } from './roadtest.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -54,6 +55,8 @@ export class UI {
       case 'exam': this.toggleMenu(false); this.closeModal(); A.startExam(); break;
       case 'practice': this.toggleMenu(false); this.closeModal(); A.startPractice(); break;
       case 'drill': this.toggleMenu(false); this.closeModal(); A.startDrill(); break;
+      case 'road': this.toggleMenu(false); this.closeModal(); A.startRoad(false); break;
+      case 'roadPractice': this.toggleMenu(false); this.closeModal(); A.startRoad(true); break;
       case 'close-modal': this.closeModal(); break;
       case 'pad-calib': A.startPadCalib(); this.renderModal(); break;
       case 'pad-reset': A.setSetting('padMap', null); this.renderModal(); break;
@@ -174,7 +177,18 @@ export class UI {
       <table>${DQ_RULES.map((r) => `<tr><td class="dq">실격</td><td>${r}</td></tr>`).join('')}</table>
       <div class="callout">이 시뮬레이터는 도로교통공단 장내기능시험을 바탕으로 연습하기 쉽게 단순화했습니다. 실제 시험 코스·기준은 시험장과 시기에 따라 다를 수 있으니, 응시 전에 꼭 시험장 안내를 확인하세요.</div>
       <h3>코스 순서</h3>
-      <p class="note">기기조작 → 출발 → 경사로(정지 후 출발) → 우회전 → 직각주차 → 우회전 → 좌회전 → 신호교차로 → 우회전 → 돌발 → 우회전 → 가속구간 → 종료</p>`;
+      <p class="note">기기조작 → 출발 → 경사로(정지 후 출발) → 우회전 → 직각주차 → 우회전 → 좌회전 → 신호교차로 → 우회전 → 돌발 → 우회전 → 가속구간 → 종료</p>
+
+      <h2 style="margin-top:28px">도로주행 시험 채점 기준</h2>
+      <p class="note">실제 도로처럼 다른 차와 신호가 있는 도시를 내비게이션 안내대로 달립니다. 100점에서 감점되며 <b>${ROAD_PASS}점 이상</b>이고 실격이 없으면 합격입니다.</p>
+      <table>
+        <tr><th>항목</th><th>감점 조건</th><th>감점</th></tr>
+        ${ROAD_RULES.map((r) => `<tr><td>${r.item}</td><td>${r.cond}</td><td class="pts">-${r.pts}</td></tr>`).join('')}
+      </table>
+      <h3>실격 (즉시 불합격)</h3>
+      <table>${ROAD_DQ.map((r) => `<tr><td class="dq">실격</td><td>${r}</td></tr>`).join('')}</table>
+      <h3>도로주행 경로</h3>
+      <p class="note">출발(정차 구역에서 왼쪽 깜빡이) → 중앙대로 직진 → 1차로로 바꿔 좌회전 → 시청로 → 일시정지 후 좌회전 → 북부로 → 좌회전 → 학교길(어린이보호구역 30km/h, 횡단보도 일시정지) → 우회전 → 중앙대로 → 오른쪽 깜빡이 켜고 "도착" 구역에 정차 → P</p>`;
   }
 
   settingsHTML() {
@@ -198,6 +212,13 @@ export class UI {
             <option value="on" ${S.touchPad === 'on' ? 'selected' : ''}>항상 표시</option>
             <option value="off" ${S.touchPad === 'off' ? 'selected' : ''}>숨기기</option>
           </select></label>
+        <label class="setting"><span>핸들 감도<small>깊게 꺾을 때 핸들을 얼마나 돌려야 하는지</small></span>
+          <select data-setting="steerRange">
+            <option value="quick" ${S.steerRange === 'quick' ? 'selected' : ''}>빠름 (끝까지 3/4바퀴)</option>
+            <option value="normal" ${S.steerRange === 'normal' ? 'selected' : ''}>보통 (끝까지 1바퀴)</option>
+            <option value="real" ${S.steerRange === 'real' ? 'selected' : ''}>실제 차 (끝까지 1.25바퀴)</option>
+          </select></label>
+        ${toggle('autoCenter', '핸들 자동 복귀', '주행 중 손을 떼면 핸들이 천천히 가운데로 돌아옵니다')}
         ${toggle('hillHold', '언덕 밀림 방지(HAC)', '실제 시험 연습에는 끄는 것을 추천')}
         <label class="setting"><span>그래픽 해상도<small>낮추면 부드러워집니다</small></span>
           <select data-setting="quality">
@@ -286,15 +307,16 @@ export class UI {
   resultHTML(r) {
     if (!r) return '';
     return `
-      <h2>시험 결과</h2>
-      <div class="result-score ${r.pass ? 'result-pass' : 'result-fail'}">${r.pass ? '합격' : '불합격'} · ${r.score}점</div>
+      <h2>${r.kind === 'road' ? (r.practice ? '도로주행 연습 결과' : '도로주행 시험 결과') : '장내기능시험 결과'}</h2>
+      <div class="result-score ${r.pass ? 'result-pass' : 'result-fail'}">${r.practice ? '연습 완료' : `${r.pass ? '합격' : '불합격'} · ${r.score}점`}</div>
       ${r.reason ? `<p class="note">${r.reason}</p>` : ''}
       <ul class="penalty-list">
         ${r.penalties.length ? r.penalties.map((p) => `<li class="${p.dq ? 'dq' : ''}"><b>${p.dq ? '실격' : '-' + p.pts}</b>${p.reason}</li>`).join('') : '<li><b>0</b>감점 없음 — 완벽해요!</li>'}
       </ul>
       <div class="row">
-        <button class="btn primary" data-action="exam">다시 시험 보기</button>
-        <button class="btn" data-action="practice">연습 주행</button>
+        ${r.kind === 'road'
+          ? '<button class="btn primary" data-action="road">도로주행 다시 보기</button><button class="btn" data-action="roadPractice">도로주행 연습</button>'
+          : '<button class="btn primary" data-action="exam">다시 시험 보기</button><button class="btn" data-action="practice">장내 연습</button>'}
       </div>`;
   }
 
@@ -323,10 +345,10 @@ export class UI {
     $('#hud-kmh').textContent = Math.round(car.kmh);
     $('#hud-gear').textContent = car.gear;
     const tag = $('#hud-mode');
-    tag.textContent = st.mode === 'exam' ? '시험' : st.mode === 'practice' ? '연습' : st.mode === 'drill' ? '기기조작' : '대기';
-    tag.classList.toggle('exam', st.mode === 'exam');
-    $('#hud-section').textContent = [st.section, st.timer].filter(Boolean).join(' · ');
-    $('#hud-score').textContent = st.mode === 'exam' ? `${st.score}점` : '';
+    tag.textContent = st.kind === 'road' ? (st.scoring ? '도로주행' : '도로 연습') : st.mode === 'exam' ? '시험' : st.mode === 'practice' ? '연습' : st.mode === 'drill' ? '기기조작' : '대기';
+    tag.classList.toggle('exam', !!st.scoring);
+    $('#hud-section').textContent = [st.section, st.limit ? `제한 ${st.limit}` : '', st.timer].filter(Boolean).join(' · ');
+    $('#hud-score').textContent = st.scoring ? `${st.score}점` : '';
   }
 
   updateDeviceLine() {

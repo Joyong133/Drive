@@ -28,7 +28,7 @@
         <div class="brand-badge">VR</div>
         <div>
           <h1>VR 운전면허 마스터</h1>
-          <p class="sub">장내기능시험 완전 정복 · 2026년형 전기차 · 발 페달 지원</p>
+          <p class="sub">장내기능 · 도로주행 시험 연습 · 2026년형 전기차 · 발 페달 지원</p>
         </div>
       </div>
 
@@ -40,8 +40,10 @@
 
       <div class="mode-pick">
         <span class="label">시작 모드</span>
-        <label class="chip"><input type="radio" name="mode" value="practice" checked /> 연습 주행</label>
+        <label class="chip"><input type="radio" name="mode" value="practice" checked /> 장내 연습</label>
         <label class="chip"><input type="radio" name="mode" value="exam" /> 장내기능시험</label>
+        <label class="chip"><input type="radio" name="mode" value="roadPractice" /> 도로주행 연습</label>
+        <label class="chip"><input type="radio" name="mode" value="road" /> 도로주행 시험</label>
       </div>
 
       <div class="start-links">
@@ -81,7 +83,9 @@
       <div class="menu-grid">
         <button class="btn primary" data-action="resume">계속하기</button>
         <button class="btn" data-action="exam">장내기능시험 시작</button>
-        <button class="btn" data-action="practice">연습 주행</button>
+        <button class="btn" data-action="practice">장내 연습</button>
+        <button class="btn" data-action="road">도로주행 시험</button>
+        <button class="btn" data-action="roadPractice">도로주행 연습</button>
         <button class="btn" data-open="jump">구간 이동</button>
         <button class="btn" data-open="pedals">발 페달 · 핸들 설정</button>
         <button class="btn" data-open="settings">설정</button>

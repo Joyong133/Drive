@@ -14,7 +14,7 @@ export const CAR = {
   wheelCenter: new THREE.Vector3(-0.38, 0.98, -0.2),
   wheelTilt: 0.4, // 스티어링 컬럼 각도(rad)
   rimR: 0.185,
-  maxWheelAngle: (450 * Math.PI) / 180, // 핸들 최대 회전(한쪽 1.25바퀴)
+  maxWheelAngle: (360 * Math.PI) / 180, // 핸들 최대 회전(한쪽). 설정 '핸들 감도'로 바뀜
 };
 
 const tmpV = new THREE.Vector3();
