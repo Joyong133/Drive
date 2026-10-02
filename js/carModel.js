@@ -535,15 +535,16 @@ function buildInterior(root) {
   const addBtn = (id, label, w, h, x, y, z, rx, ry, opts = {}) => {
     const tex = opts.tex || buttonTexture(label, opts);
     const mat = new THREE.MeshBasicMaterial({ map: tex });
+    const parent = opts.parent || g;
     const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.008, h + 0.008, 0.014), trim);
     base.position.set(x, y, z);
     base.rotation.set(rx, ry, 0, 'YXZ');
-    g.add(base);
+    parent.add(base);
     const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
     face.position.set(x, y, z);
     face.rotation.set(rx, ry, 0, 'YXZ');
     face.translateZ(0.0075);
-    g.add(face);
+    parent.add(face);
     keep.add(face);
     const normal = new THREE.Vector3(0, 0, 1).applyEuler(face.rotation);
     buttons[id] = { mesh: face, mat, half: new THREE.Vector3(w / 2, h / 2, 0.03), base: face.position.clone(), normal };
@@ -582,8 +583,12 @@ function buildInterior(root) {
   setBelt(false);
 
   for (const m of [cluster, center, mirrorL, mirrorR, rearMirror, beltShoulder, beltLap]) keep.add(m);
+  // 핸들 위 방향지시등 버튼 (손 추적: 핸들을 잡은 채 손가락으로 누르기)
+  addBtn('turnL', '◀', 0.042, 0.03, -0.088, 0.04, 0.022, 0, 0, { parent: spinner, size: 64, w: 128, h: 96, fg: '#ffb020' });
+  addBtn('turnR', '▶', 0.042, 0.03, 0.088, 0.04, 0.022, 0, 0, { parent: spinner, size: 64, w: 128, h: 96, fg: '#ffb020' });
+
   mergeStaticChildren(g, keep);
-  mergeStaticChildren(spinner);
+  mergeStaticChildren(spinner, keep);
 
   return {
     group: g, wheelPivot, spinner, stalkL, stalkR, cluster, center, mirrorL, mirrorR, rearMirror,

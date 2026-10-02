@@ -539,6 +539,8 @@ export class Cockpit {
     set('high', c.lights === 2 ? 0x7fb8ff : dim);
     set('wiper', c.wiper > 0 ? 0x7fe9ff : dim);
     set('horn', dim);
+    set('turnL', c.blinkOn && (c.turn < 0 || c.hazard) ? 0xffffff : dim);
+    set('turnR', c.blinkOn && (c.turn > 0 || c.hazard) ? 0xffffff : dim);
   }
 
   pressButtonVisual(id) {

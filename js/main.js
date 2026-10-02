@@ -338,23 +338,23 @@ app.touchpad = touchpad;
 
 // ───────── 지금 쓰는 입력 장치에 맞춘 조작 안내
 app.inputMode = () => {
-  if (renderer.xr.isPresenting) return 'xr';
+  if (renderer.xr.isPresenting) return input.handsActive ? 'hand' : 'xr';
   if (touchpad.shouldShow()) return 'touch';
   if (input.padNames.length) return 'pad';
   return 'keyboard';
 };
 const TIPS = {
-  brake: { xr: '왼손 트리거', touch: '화면 오른쪽 아래 [브레이크] 버튼', pad: '왼쪽 트리거(LT) 또는 브레이크 페달', keyboard: '↓ 키' },
-  accel: { xr: '오른손 트리거', touch: '[가속] 버튼', pad: '오른쪽 트리거(RT) 또는 가속 페달', keyboard: '↑ 키' },
-  start: { xr: 'START 버튼(손끝으로) 또는 오른손 스틱 누르기', touch: '[START] 버튼', pad: 'A 버튼', keyboard: 'Enter 키' },
-  belt: { xr: '시트 옆 빨간 [안전벨트] 버튼(손끝으로)', touch: '[벨트] 버튼', pad: '십자키 ←', keyboard: 'B 키' },
-  epb: { xr: '콘솔 [EPB] 버튼 또는 왼손 스틱 누르기', touch: '[EPB] 버튼', pad: 'B 버튼', keyboard: 'Space 키' },
-  hazard: { xr: '왼손 Y 버튼', touch: '[비상등] 버튼', pad: 'X 버튼', keyboard: 'F 키' },
-  turnL: { xr: '왼손 X 버튼', touch: '[◀ 깜빡] 버튼', pad: 'LB 버튼', keyboard: 'Q 키' },
-  turnR: { xr: '오른손 A 버튼', touch: '[깜빡 ▶] 버튼', pad: 'RB 버튼', keyboard: 'E 키' },
-  gear: { xr: '콘솔 P·R·N·D 버튼 또는 오른손 스틱 앞/뒤', touch: '[P][R][N][D] 버튼', pad: '십자키 ↑/↓', keyboard: 'P·R·N·D 키' },
-  lights: { xr: '왼손 스틱 앞/뒤', touch: '[전조등]·[상향] 버튼', pad: '십자키 →(전조등)', keyboard: 'L(전조등)·K(상향등) 키' },
-  wiper: { xr: '오른손 B 버튼', touch: '[와이퍼] 버튼', pad: 'Y 버튼', keyboard: 'W 키' },
+  brake: { hand: '왼손 엄지·검지 집기', xr: '왼손 트리거', touch: '화면 오른쪽 아래 [브레이크] 버튼', pad: '왼쪽 트리거(LT) 또는 브레이크 페달', keyboard: '↓ 키' },
+  accel: { hand: '오른손 엄지·검지 집기', xr: '오른손 트리거', touch: '[가속] 버튼', pad: '오른쪽 트리거(RT) 또는 가속 페달', keyboard: '↑ 키' },
+  start: { hand: 'START 버튼을 검지로', xr: 'START 버튼(손끝으로) 또는 오른손 스틱 누르기', touch: '[START] 버튼', pad: 'A 버튼', keyboard: 'Enter 키' },
+  belt: { hand: '시트 오른쪽 빨간 [안전벨트] 버튼을 검지로', xr: '시트 옆 빨간 [안전벨트] 버튼(손끝으로)', touch: '[벨트] 버튼', pad: '십자키 ←', keyboard: 'B 키' },
+  epb: { hand: '콘솔 [EPB] 버튼을 검지로', xr: '콘솔 [EPB] 버튼 또는 왼손 스틱 누르기', touch: '[EPB] 버튼', pad: 'B 버튼', keyboard: 'Space 키' },
+  hazard: { hand: '대시보드 빨간 삼각형 버튼', xr: '왼손 Y 버튼', touch: '[비상등] 버튼', pad: 'X 버튼', keyboard: 'F 키' },
+  turnL: { hand: '핸들 왼쪽 ◀ 버튼', xr: '왼손 X 버튼', touch: '[◀ 깜빡] 버튼', pad: 'LB 버튼', keyboard: 'Q 키' },
+  turnR: { hand: '핸들 오른쪽 ▶ 버튼', xr: '오른손 A 버튼', touch: '[깜빡 ▶] 버튼', pad: 'RB 버튼', keyboard: 'E 키' },
+  gear: { hand: '콘솔 P·R·N·D 버튼을 검지로', xr: '콘솔 P·R·N·D 버튼 또는 오른손 스틱 앞/뒤', touch: '[P][R][N][D] 버튼', pad: '십자키 ↑/↓', keyboard: 'P·R·N·D 키' },
+  lights: { hand: '대시보드 왼쪽 [전조등]·[상향등] 버튼', xr: '왼손 스틱 앞/뒤', touch: '[전조등]·[상향] 버튼', pad: '십자키 →(전조등)', keyboard: 'L(전조등)·K(상향등) 키' },
+  wiper: { hand: '대시보드 왼쪽 [와이퍼] 버튼', xr: '오른손 B 버튼', touch: '[와이퍼] 버튼', pad: 'Y 버튼', keyboard: 'W 키' },
 };
 app.tip = (key) => {
   const mode = app.inputMode();
@@ -554,6 +554,14 @@ function loop() {
     world.update(dt, car);
   }
   if (app.started && !app.paused) app.exam.update(dt);
+  // 손이 처음 인식되면 손 조작법을 한 번 알려 줌
+  if (input.handsActive && !app.handTipShown) {
+    app.handTipShown = true;
+    const t = '손으로 운전: 핸들 테두리에서 주먹을 쥐고 돌리기, 오른손 엄지·검지 집기는 가속, 왼손 집기는 브레이크, 버튼은 검지로 누르기';
+    cockpit.showFlash('손 인식됨 · 주먹=핸들 · 집기=페달', '#2a6fd6', 4);
+    ui.toast(t, 'info');
+    audio.speak(t);
+  }
   updateCarVisual(model, car, dt);
   guide.update();
   cockpit.update(dt, xr);

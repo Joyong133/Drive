@@ -12,6 +12,7 @@ const KEYMAP = {
 };
 
 const tmpV = new THREE.Vector3();
+const ZERO_M = new THREE.Matrix4().makeScale(0, 0, 0);
 const tmpV2 = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 
@@ -40,6 +41,43 @@ export function footPedals(cal, q) {
   if (onBrake) brake = clamp(((press - cal.brakeRest) / cal.brakePress - dz) / (1 - dz), 0, 1);
   else throttle = clamp((press / cal.pressAngle - dz) / (1 - dz), 0, 1);
   return { throttle, brake, pivot, onBrake };
+}
+
+// ───────── 손 추적 (Meta Quest 핸드 트래킹)
+export const HAND_JOINTS = [
+  'wrist',
+  'thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip',
+  'index-finger-metacarpal', 'index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate', 'index-finger-phalanx-distal', 'index-finger-tip',
+  'middle-finger-metacarpal', 'middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal', 'middle-finger-tip',
+  'ring-finger-metacarpal', 'ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal', 'ring-finger-tip',
+  'pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal', 'pinky-finger-tip',
+];
+export const HAND = {
+  fistClose: 0.115,  // 가운데·약지 끝이 손목에서 이만큼 가까우면 주먹 (핸들 잡기)
+  fistOpen: 0.135,   // 이만큼 멀어지면 주먹을 편 것
+  pinchFull: 0.012,  // 엄지·검지 끝 거리: 완전히 집음
+  pinchNone: 0.045,  // 이보다 멀면 안 집음 (손을 편하게 두었을 때 가속되지 않게)
+  extended: 0.13,    // 가운데 손가락이 펴져 있어야 '집기'로 인정 (주먹과 구분)
+};
+
+// 관절 위치(월드) → 주먹/집기 상태
+export function analyzeHand(p) {
+  const w = p.wrist, it = p['index-finger-tip'], tt = p['thumb-tip'];
+  const mt = p['middle-finger-tip'], rt = p['ring-finger-tip'];
+  const mp = p['middle-finger-phalanx-proximal'] || p['middle-finger-metacarpal'];
+  if (!w || !it || !tt || !mt || !rt || !mp) return { tracked: false };
+  const curl = (mt.distanceTo(w) + rt.distanceTo(w)) / 2;
+  const pinchDist = it.distanceTo(tt);
+  const pinch = clamp((HAND.pinchNone - pinchDist) / (HAND.pinchNone - HAND.pinchFull), 0, 1);
+  return {
+    tracked: true,
+    curl,
+    pinch,
+    pinchDist,
+    midExtended: mt.distanceTo(w) > HAND.extended,
+    indexTip: it.clone(),
+    grabPoint: w.clone().lerp(mp, 0.8), // 주먹 쥐었을 때 핸들 테두리가 오는 곳
+  };
 }
 
 const axisNorm = (v, rest, full) => (full === rest ? 0 : clamp((v - rest) / (full - rest), 0, 1));
@@ -336,6 +374,11 @@ export class Input {
       ray.add(laser);
       c.laser = laser;
       c.visual = { glove, tip };
+      const handGroup = r.xr.getHand(i);
+      this.app.rig.add(handGroup);
+      c.handGroup = handGroup;
+      c.pinchS = 0;
+      c.fist = false;
       ray.addEventListener('connected', (e) => {
         c.source = e.data;
         c.hand = e.data.handedness;
@@ -349,6 +392,63 @@ export class Input {
       this.app.rig.add(grip);
       this.controllers.push(c);
     }
+    // 손 관절 표시 (두 손 × 25개 관절을 인스턴스 하나로)
+    this.jointMesh = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(1, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xe8c4a0, roughness: 0.6 }),
+      HAND_JOINTS.length * 2,
+    );
+    this.jointMesh.frustumCulled = false;
+    this.jointMesh.count = HAND_JOINTS.length * 2;
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let k = 0; k < this.jointMesh.count; k++) {
+      this.jointMesh.setMatrixAt(k, zero);
+      const tip = HAND_JOINTS[k % HAND_JOINTS.length] === 'index-finger-tip';
+      this.jointMesh.setColorAt(k, new THREE.Color(tip ? 0x3ddcff : 0xe8c4a0));
+    }
+    this.app.rig.add(this.jointMesh);
+    this.handsActive = false;
+  }
+
+  // 손 하나 처리: 주먹으로 핸들 잡기, 엄지·검지 집기로 가속(오른손)/브레이크(왼손), 검지로 버튼 누르기
+  updateHand(c, idx, dt, out, acc) {
+    c.visual.glove.visible = false;
+    c.visual.tip.visible = false;
+    c.laser.visible = false;
+    const joints = c.handGroup.joints || {};
+    const pos = {};
+    const m = new THREE.Matrix4();
+    const rig = this.app.rig;
+    HAND_JOINTS.forEach((name, k) => {
+      const j = joints[name];
+      const slot = idx * HAND_JOINTS.length + k;
+      if (j && j.visible) {
+        const wp = j.getWorldPosition(new THREE.Vector3());
+        pos[name] = wp;
+        const lp = rig.worldToLocal(wp.clone());
+        const rad = Math.max(0.006, (j.jointRadius || 0.008) * 0.9);
+        m.makeScale(rad, rad, rad).setPosition(lp);
+      } else {
+        m.makeScale(0, 0, 0);
+      }
+      this.jointMesh.setMatrixAt(slot, m);
+    });
+    this.jointMesh.instanceMatrix.needsUpdate = true;
+    c.jointsShown = true;
+    const h = analyzeHand(pos);
+    if (!h.tracked) { c.grabbing = false; c.fist = false; c.pokeKey = null; return; }
+    this.handsActive = true;
+    c.fist = c.fist ? h.curl < HAND.fistOpen : h.curl < HAND.fistClose;
+    const g = this.grabCheck(c, c.fist, h.grabPoint, true);
+    if (g !== null) { acc.delta += g; acc.count++; }
+    const pinch = !c.grabbing && h.midExtended ? h.pinch : 0;
+    c.pinchS += (pinch - c.pinchS) * Math.min(1, dt * 12);
+    const val = c.pinchS < 0.06 ? 0 : (c.pinchS - 0.06) / 0.94;
+    if (c.hand === 'right') out.throttle = Math.max(out.throttle, val);
+    else out.brake = Math.max(out.brake, val);
+    if (val > 0.05) this.lastSource = 'hand';
+    if (!c.grabbing && !c.fist) this.pokeAt(c, h.indexTip);
+    else c.pokeKey = null;
   }
 
   haptic(c, v = 0.5, ms = 30) {
@@ -364,13 +464,21 @@ export class Input {
     const app = this.app;
     const S = app.settings;
     const car = this.car;
-    let grabDelta = 0, grabCount = 0;
+    const acc = { delta: 0, count: 0 };
     this.footQuat = null;
+    this.handsActive = false;
     app.cockpit.hoverUV = null;
 
-    for (const c of this.controllers) {
+    this.controllers.forEach((c, idx) => {
+      if (c.source && c.source.hand) { this.updateHand(c, idx, dt, out, acc); return; }
+      // 손이 아니면 이 손 관절 표시는 숨김
+      if (c.jointsShown !== false) {
+        for (let k = 0; k < HAND_JOINTS.length; k++) this.jointMesh.setMatrixAt(idx * HAND_JOINTS.length + k, ZERO_M);
+        this.jointMesh.instanceMatrix.needsUpdate = true;
+        c.jointsShown = false;
+      }
       const gp = c.source?.gamepad;
-      if (!gp) { c.laser.visible = false; continue; }
+      if (!gp) { c.laser.visible = false; return; }
       const isFoot = S.footMode !== 'off' && c.hand === S.footMode;
       c.visual.glove.visible = !isFoot;
       c.visual.tip.visible = !isFoot;
@@ -384,7 +492,7 @@ export class Input {
           out.brake = Math.max(out.brake, f.brake);
           if (f.throttle > 0.05 || f.brake > 0.05) this.lastSource = 'foot';
         }
-        continue;
+        return;
       }
       const singleHand = S.footMode !== 'off';
       const pressed = gp.buttons.map((b) => b.pressed);
@@ -421,7 +529,7 @@ export class Input {
       // 핸들 잡기
       const squeeze = !!pressed[1];
       const g = this.grabCheck(c, squeeze);
-      if (g !== null) { grabDelta += g; grabCount++; }
+      if (g !== null) { acc.delta += g; acc.count++; }
 
       // 버튼 배치
       const stickEdge = (y, key) => {
@@ -456,9 +564,9 @@ export class Input {
         out.activeSteer = true;
       }
       c.prev = pressed;
-    }
-    if (grabCount > 0) {
-      out.wheelDelta += grabDelta / grabCount;
+    });
+    if (acc.count > 0) {
+      out.wheelDelta += acc.delta / acc.count;
       out.activeSteer = true;
       out.grabbing = true;
     }
@@ -477,8 +585,11 @@ export class Input {
   }
 
   pokeCheck(c) {
+    this.pokeAt(c, c.ray.getWorldPosition(tmpV));
+  }
+
+  pokeAt(c, tip) {
     const app = this.app;
-    const tip = c.ray.getWorldPosition(tmpV);
     const hit = app.cockpit.pokeTest(tip);
     const key = hit ? (hit.kind === 'button' ? hit.id : 'screen') : null;
     if (key && key !== c.pokeKey) {
@@ -494,15 +605,16 @@ export class Input {
   }
 
   // 반환: 이번 프레임 회전량(라디안, 시계방향 +) 또는 null
-  grabCheck(c, squeeze) {
+  // pos: 잡는 위치(월드). level: 손 추적처럼 주먹을 쥔 채로 테두리에 다가가도 잡히게
+  grabCheck(c, squeeze, pos = null, level = false) {
     const pivot = this.app.model.interior.wheelPivot;
-    const p = c.grip.getWorldPosition(tmpV);
+    const p = pos ? tmpV.copy(pos) : c.grip.getWorldPosition(tmpV);
     pivot.worldToLocal(p);
     const r = Math.hypot(p.x, p.y);
     const phi = Math.atan2(p.y, p.x);
     const near = Math.abs(r - CAR.rimR) < 0.1 && Math.abs(p.z) < 0.13;
     let result = null;
-    if (squeeze && !c.prevSqueeze && near) {
+    if (squeeze && (level || !c.prevSqueeze) && near && !c.grabbing) {
       c.grabbing = true;
       c.prevPhi = phi;
       this.haptic(c, 0.4, 40);
