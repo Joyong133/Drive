@@ -1,0 +1,54 @@
+/* 경부고속도로 VR 드라이브 화면 */
+.trip-card { width: min(760px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; }
+.trip-grid { display: grid; gap: 4px; margin-bottom: 18px; }
+.trip-grid .mode-pick { margin-top: 10px; }
+.trip-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.trip-opts .setting { display: grid; gap: 6px; font-weight: 700; font-size: 14px; color: var(--muted); }
+.trip-opts .setting.wide { grid-column: 1 / -1; }
+.trip-opts select, .trip-opts input {
+  font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%;
+}
+.trip-opts select option { background: #121a31; }
+.btn.resume { width: 100%; margin-top: 12px; }
+.resume-vr { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; }
+.trip-help { margin-top: 14px; color: var(--muted); }
+.trip-help summary { cursor: pointer; font-weight: 700; color: var(--text); }
+.trip-help td, .trip-help th { font-size: 13px; }
+.credit { font-size: 12px; color: var(--muted); margin: 16px 0 0; line-height: 1.6; }
+.credit a { color: var(--accent); }
+
+.trip-hud {
+  position: fixed; left: 16px; top: 16px; width: min(520px, calc(100vw - 32px));
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 16px; pointer-events: none;
+}
+.trip-hud .place { font-size: 18px; font-weight: 900; }
+.trip-hud .next { font-size: 15px; color: var(--accent); margin-top: 4px; min-height: 20px; }
+.trip-hud .progress { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); margin-top: 10px; overflow: hidden; }
+.trip-hud .progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.trip-hud .eta { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.trip-speed {
+  position: fixed; right: 16px; top: 16px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px 16px; text-align: right; pointer-events: none;
+}
+.trip-speed span { font-size: 34px; font-weight: 900; }
+.trip-speed small { margin-left: 4px; color: var(--muted); }
+.trip-speed b { display: block; font-size: 14px; color: var(--warn); }
+.trip-bar {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: flex; gap: 8px; align-items: center; pointer-events: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px;
+  width: min(760px, calc(100vw - 32px));
+}
+.trip-bar input[type=range] { flex: 1; min-width: 60px; accent-color: var(--accent); }
+.trip-bar .hud-btn { pointer-events: auto; white-space: nowrap; }
+.trip-loading {
+  position: fixed; left: 50%; top: 45%; transform: translate(-50%, -50%); pointer-events: none;
+  background: rgba(8, 14, 24, 0.82); border: 1px solid var(--line); border-radius: 999px; padding: 12px 22px;
+  font-weight: 700;
+}
+@media (max-width: 640px) {
+  .trip-opts { grid-template-columns: 1fr; }
+  .trip-bar .hud-btn[data-hud="menu"] { display: none; }
+}

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>경부고속도로 VR 드라이브</title>
+  <meta name="description" content="서울↔부산 경부고속도로 422km를 실제 지형·위성사진 위에서 승용차를 타고 4시간 30분 동안 달리는 VR(메타 퀘스트)·PC 드라이브" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/trip.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <section id="start-screen" class="overlay">
+    <div class="start-card trip-card">
+      <div class="brand">
+        <div class="brand-badge">VR</div>
+        <div>
+          <h1>경부고속도로 VR 드라이브</h1>
+          <p class="sub">서울 ↔ 부산 422 km · 실제 지형과 위성사진 · 승용차 자율주행 · Meta Quest / PC</p>
+        </div>
+      </div>
+
+      <div class="trip-grid">
+        <div class="mode-pick">
+          <span class="label">방향</span>
+          <label class="chip"><input type="radio" name="dir" value="SB" checked /> 서울 → 부산</label>
+          <label class="chip"><input type="radio" name="dir" value="NB" /> 부산 → 서울</label>
+        </div>
+        <div class="mode-pick">
+          <span class="label">좌석</span>
+          <label class="chip"><input type="radio" name="seat" value="passenger" checked /> 조수석</label>
+          <label class="chip"><input type="radio" name="seat" value="driver" /> 운전석</label>
+          <label class="chip"><input type="radio" name="seat" value="rear" /> 뒷좌석</label>
+        </div>
+        <div class="trip-opts">
+          <label class="setting">출발 시각
+            <select id="opt-depart">
+              <option value="06:00">06:00 (아침 해)</option>
+              <option value="08:00">08:00</option>
+              <option value="09:00" selected>09:00 (추천)</option>
+              <option value="11:00">11:00</option>
+              <option value="13:00">13:00</option>
+              <option value="15:00">15:00 (도착 무렵 노을)</option>
+              <option value="now">지금 시각</option>
+            </select>
+          </label>
+          <label class="setting">걸리는 시간
+            <select id="opt-duration">
+              <option value="240">4시간</option>
+              <option value="270" selected>4시간 30분 (실제 버스와 비슷)</option>
+              <option value="300">5시간</option>
+            </select>
+          </label>
+          <label class="setting">화질
+            <select id="opt-quality">
+              <option value="low">가볍게 (Quest 2)</option>
+              <option value="mid" selected>보통 (Quest 3 추천)</option>
+              <option value="high">고화질 (PC VR·고성능 PC)</option>
+            </select>
+          </label>
+          <label class="setting">날씨
+            <select id="opt-haze">
+              <option value="clear">맑음 (멀리까지)</option>
+              <option value="normal" selected>보통</option>
+              <option value="hazy">뿌연 날 (미세먼지)</option>
+            </select>
+          </label>
+          <label class="setting wide">위성사진
+            <select id="opt-imagery">
+              <option value="esri">Esri 위성사진 (기본, 키 필요 없음)</option>
+              <option value="vworld">VWorld 항공사진 (국토부, 더 선명 · 무료 키 필요)</option>
+              <option value="none">사진 없이 (가장 가벼움)</option>
+            </select>
+          </label>
+          <label id="vworld-row" class="setting wide hidden">VWorld 인증키
+            <input id="opt-vworld" type="text" placeholder="vworld.kr에서 발급한 키 (이 사이트 주소를 등록)" />
+          </label>
+        </div>
+      </div>
+
+      <div class="start-actions">
+        <button id="btn-vr" class="btn primary big" disabled>VR 기기 확인 중…</button>
+        <button id="btn-desktop" class="btn big" disabled>PC 화면으로 시작</button>
+      </div>
+      <button id="btn-resume" class="btn hidden resume">이어서 보기</button>
+      <label class="resume-vr"><input id="chk-resume-vr" type="checkbox" /> VR도 이어서 보기로 시작</label>
+      <p id="load-status" class="hint">준비 중…</p>
+
+      <details class="trip-help">
+        <summary>조작법</summary>
+        <table>
+          <tr><th>VR 컨트롤러</th><td>센터 화면을 가리키고 트리거 = 버튼 누르기 · 오른손 스틱 ↑↓ = 빠르게/느리게 · A = 멈춤/계속 · B = 시점(차 안/차 뒤/하늘) · X = 메뉴 · Y·왼손 스틱 누르기 = 정면 맞춤</td></tr>
+          <tr><th>PC</th><td>마우스 드래그 = 둘러보기 · 휠 = 확대 · Space = 멈춤 · 1~6 = ×1 ×2 ×5 ×10 ×20 ×60 · ←/→ = 1분 이동 (Shift: 10분) · V = 시점 · C = 좌석 · M = 메뉴 · H = 화면 정보 숨기기 · Esc = 설정</td></tr>
+        </table>
+        <p class="note">실제 4시간 30분 동안 달립니다. 진행 위치는 자동 저장되어 다음에 <b>이어서 보기</b>로 계속할 수 있어요. 멀미가 나면 잠깐 쉬었다가 이어서 보세요.</p>
+      </details>
+      <p class="credit">도로·건물·지명 © OpenStreetMap contributors, Overture Maps Foundation (ODbL) · 지형 AWS Terrain Tiles · 위성사진 Esri, Maxar, Earthstar Geographics / 국토교통부 VWorld · <a href="index.html">운전면허 연습으로 가기</a></p>
+    </div>
+  </section>
+
+  <section id="hud" class="hidden">
+    <div class="trip-hud">
+      <div id="hud-place" class="place"></div>
+      <div id="hud-next" class="next"></div>
+      <div id="hud-progress" class="progress"><i id="hud-progress-fill"></i></div>
+      <div id="hud-eta" class="eta"></div>
+    </div>
+    <div class="trip-speed"><span id="hud-speed">0</span><small>km/h</small><b id="hud-warp">×1</b></div>
+    <div class="trip-bar">
+      <button class="hud-btn" data-hud="warpDown">◀◀</button>
+      <button class="hud-btn" data-hud="pause">❚❚ / ▶</button>
+      <button class="hud-btn" data-hud="warpUp">▶▶</button>
+      <input id="hud-seek" type="range" min="0" max="1000" value="0" aria-label="여정 위치" />
+      <button class="hud-btn" data-hud="view">시점</button>
+      <button class="hud-btn" data-hud="menu">메뉴</button>
+    </div>
+    <div id="hud-loading" class="trip-loading hidden">지형·위성사진 불러오는 중…</div>
+    <div id="toasts"></div>
+  </section>
+
+  <script type="module" src="js/trip/main.js"></script>
+</body>
+</html>
