@@ -15,18 +15,17 @@ function colored(g, r, gg, b) {
 }
 
 function pineGeo() {
-  const trunk = new THREE.CylinderGeometry(0.12, 0.18, 3, 5, 1, true); trunk.translate(0, 1.5, 0);
-  const c1 = new THREE.ConeGeometry(2.3, 5.5, 7, 1, true); c1.translate(0, 4.6, 0);
-  const c2 = new THREE.ConeGeometry(1.6, 4.2, 7, 1, true); c2.translate(0, 7.6, 0);
+  const trunk = new THREE.CylinderGeometry(0.12, 0.18, 3, 4, 1, true); trunk.translate(0, 1.5, 0);
+  const c1 = new THREE.ConeGeometry(2.3, 5.5, 6, 1, true); c1.translate(0, 4.6, 0);
+  const c2 = new THREE.ConeGeometry(1.6, 4.2, 6, 1, true); c2.translate(0, 7.6, 0);
   // 줄기는 갈색이지만 인스턴스 색(사진 색)과 곱해지므로 밝게
   return mergeGeometries([colored(trunk, 1.6, 1.0, 0.6), colored(c1, 0.95, 1.05, 0.95), colored(c2, 1.1, 1.15, 1.05)]);
 }
 
 function broadGeo() {
-  const trunk = new THREE.CylinderGeometry(0.15, 0.22, 3.2, 5, 1, true); trunk.translate(0, 1.6, 0);
-  const crown = new THREE.IcosahedronGeometry(2.9, 0); crown.scale(1, 0.85, 1); crown.translate(0, 5.2, 0);
-  const crown2 = new THREE.IcosahedronGeometry(1.9, 0); crown2.translate(0.9, 6.6, 0.5);
-  return mergeGeometries([colored(trunk, 1.6, 1.0, 0.6), colored(crown, 1.0, 1.0, 1.0), colored(crown2, 1.15, 1.15, 1.1)]);
+  const trunk = new THREE.CylinderGeometry(0.15, 0.22, 3.2, 4, 1, true); trunk.translate(0, 1.6, 0);
+  const crown = new THREE.IcosahedronGeometry(3.0, 0); crown.scale(1, 0.9, 1); crown.translate(0, 5.4, 0);
+  return mergeGeometries([colored(trunk, 1.6, 1.0, 0.6), colored(crown, 1.05, 1.05, 1.0)]);
 }
 
 export class Trees {

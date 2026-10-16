@@ -140,16 +140,68 @@ const TYPES = [
 
 const MAX_PER_TYPE = 64;
 
+// 밤·터널에서 보이는 전조등/후미등 빛 (앞 = -z)
+const LAMPS = {
+  sedan: { w: 1.85, hy: 0.66, ty: 0.82 }, suv: { w: 1.9, hy: 0.78, ty: 0.98 }, hatch: { w: 1.78, hy: 0.66, ty: 0.85 },
+  porter: { w: 1.74, hy: 0.75, ty: 0.7 }, truck: { w: 2.3, hy: 0.9, ty: 0.9 }, semi: { w: 2.45, hy: 1.0, ty: 1.0 }, bus: { w: 2.49, hy: 0.75, ty: 1.0 },
+};
+let glowTex = null;
+function glowTexture() {
+  if (glowTex) return glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.25, 'rgba(255,255,255,0.7)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  glowTex = new THREE.CanvasTexture(c);
+  return glowTex;
+}
+function lampGeo(name, L) {
+  const d = LAMPS[name] || LAMPS.sedan;
+  const P = [], U = [], Cc = [], I = [];
+  const quad = (x, y, z, size, col, nz) => {
+    const b = P.length / 3;
+    for (const [dx, dy, u, v] of [[-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, 1, 0, 1]]) {
+      P.push(x + dx * size, y + dy * size * 0.6, z); U.push(u, v); Cc.push(...col);
+    }
+    if (nz < 0) I.push(b, b + 2, b + 1, b, b + 3, b + 2); else I.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  };
+  for (const sx of [-1, 1]) {
+    const x = sx * (d.w / 2 - 0.32);
+    quad(x, d.hy, -L / 2 - 0.06, 0.32, [1.0, 0.92, 0.75], -1);
+    quad(x, d.hy, -L / 2 - 0.08, 0.9, [0.35, 0.32, 0.26], -1);   // 번짐
+    quad(x, d.ty, L / 2 + 0.06, 0.22, [1.0, 0.08, 0.04], 1);
+    quad(x, d.ty, L / 2 + 0.08, 0.5, [0.35, 0.02, 0.01], 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
+  g.setIndex(I);
+  return g;
+}
+
 export class Traffic {
   constructor({ scene, routes, quality = 'mid' }) {
     this.routes = routes;
     this.group = new THREE.Group();
     this.group.name = 'traffic';
     scene.add(this.group);
+    this.lampMat = new THREE.MeshBasicMaterial({
+      map: glowTexture(), vertexColors: true, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    });
     const bodyMat = new THREE.MeshLambertMaterial({ vertexColors: true });
     const detMat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.types = TYPES.map((t) => {
       const g = t.make();
+      // 모양은 앞이 +z로 만들어졌으므로 내 차처럼 앞 = -z가 되게 돌림
+      g.body.rotateY(Math.PI);
+      g.det.rotateY(Math.PI);
       const body = new THREE.InstancedMesh(g.body, bodyMat, MAX_PER_TYPE);
       const det = new THREE.InstancedMesh(g.det, detMat, MAX_PER_TYPE);
       for (const m of [body, det]) {
@@ -160,7 +212,14 @@ export class Traffic {
         this.group.add(m);
       }
       body.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PER_TYPE * 3), 3);
-      return { ...t, L: g.L, body, det };
+      const lamps = new THREE.InstancedMesh(lampGeo(t.name, g.L), this.lampMat, MAX_PER_TYPE);
+      lamps.instanceMatrix = det.instanceMatrix; // 같은 행렬 공유
+      lamps.frustumCulled = false;
+      lamps.count = 0;
+      lamps.visible = false;
+      lamps.renderOrder = 5;
+      this.group.add(lamps);
+      return { ...t, L: g.L, body, det, lamps };
     });
     this.totalW = TYPES.reduce((a, t) => a + t.w, 0);
     this.density = { low: 9, mid: 14, high: 18 }[quality] || 14; // 차로·km당이 아니라 방향·km당 대수
@@ -168,6 +227,7 @@ export class Traffic {
     this.opp = [];
     this.seed = 12345;
     this.events = [];
+    this.lampLevel = 0;
     this.m = new THREE.Matrix4();
     this.q = new THREE.Quaternion();
     this.e = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -175,6 +235,12 @@ export class Traffic {
     this.one = new THREE.Vector3(1, 1, 1);
     this.col = new THREE.Color();
     this.tmp = {};
+  }
+
+  // 0(낮) ~ 1(밤): 차 불빛 세기
+  setLamps(level) {
+    this.lampLevel = level;
+    this.lampMat.color.setScalar(Math.min(1, level));
   }
 
   rand() { this.seed = (this.seed * 16807) % 2147483647; return this.seed / 2147483647; }
@@ -390,7 +456,8 @@ export class Traffic {
     for (const v of this.same) put(this.route, v);
     for (const v of this.opp) put(this.other, v);
     this.types.forEach((t, i) => {
-      t.body.count = t.det.count = counts[i];
+      t.body.count = t.det.count = t.lamps.count = counts[i];
+      t.lamps.visible = this.lampLevel > 0.02;
       t.body.instanceMatrix.needsUpdate = true;
       t.det.instanceMatrix.needsUpdate = true;
       if (t.body.instanceColor) t.body.instanceColor.needsUpdate = true;

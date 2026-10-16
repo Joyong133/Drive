@@ -17,8 +17,8 @@ const SLOGANS = [
 ];
 
 function cleanIC(name) {
-  if (!name) return '';
-  return name.replace(/나들목$/, ' IC').replace(/분기점$/, ' JC').replace(/(IC|JC)$/, ' $1').replace(/\s+/g, ' ').trim();
+  if (!name || !/(나들목|분기점|IC|JC)$/.test(name)) return '';
+  return name.replace(/나들목$/, ' IC').replace(/분기점$/, ' JC').replace(/([^ ])(IC|JC)$/, '$1 $2').replace(/\s+/g, ' ').trim();
 }
 
 export class SignFactory {
@@ -59,9 +59,10 @@ export class SignFactory {
       exits.push({ s: sg.s, labels: [...sg.labels].slice(0, 3), name: cleanIC(ramp?.name), side: ramp ? ramp.side : 1 });
     }
     for (const e of exits) {
-      // 이 방향의 목적지(부산/서울 등)는 출구 표지에서 빼기
+      // 이 방향으로 계속 가면 닿는 도시는 출구 표지에서 빼기 (본선 분리 구간 등)
       const through = majorsAhead(e.s);
-      const labels = e.labels.filter((l) => !through.includes(l)).slice(0, 2);
+      const ahead = new Set(m.cities.filter((c) => c.s > e.s).map((c) => c.name));
+      const labels = e.labels.filter((l) => !through.includes(l) && !ahead.has(l.replace(/\(.*\)/, ''))).slice(0, 2);
       if (!labels.length) continue;
       const jc = /JC/.test(e.name);
       if (jc) add({ s: e.s - 2000, type: 'advance', side: 1, labels, name: e.name, dist: '2km' });
@@ -249,7 +250,14 @@ function drawSign(p) {
 const POST = (() => { const c = new THREE.Color(0x8b9197); return [c.r, c.g, c.b]; })();
 const BACK = (() => { const c = new THREE.Color(0x3d4247); return [c.r, c.g, c.b]; })();
 
-const panelMats = new Map();
+// 밤에 전조등 빛을 되돌려 보이는 반사 표지판: 모든 판 재질을 모아 두고 세기를 바꿈
+export const signMats = new Set();
+let signGlow = 0;
+export function setSignGlow(v) {
+  if (Math.abs(v - signGlow) < 0.02) return;
+  signGlow = v;
+  for (const m of signMats) m.emissiveIntensity = v;
+}
 const postMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
 
 function addPanel(group, tex, origin, f, lat, bottom, w, h) {
@@ -268,10 +276,10 @@ function addPanel(group, tex, origin, f, lat, bottom, w, h) {
   const n = [-f.tx, 0, -f.tz];
   geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([...n, ...n, ...n, ...n]), 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2));
-  geo.setIndex([0, 2, 1, 0, 3, 2]);
+  geo.setIndex([0, 1, 2, 0, 2, 3]); // 앞면 법선 = -진행 방향 (다가오는 차 쪽)
   geo.computeBoundingSphere();
-  const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5 });
-  void panelMats;
+  const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: signGlow });
+  signMats.add(mat);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.copy(origin);
   mesh.userData.ownMap = true;

@@ -21,10 +21,15 @@ export const IMAGERY = {
   },
   none: { label: '사진 없이 (색으로만, 가장 가벼움)', url: null, maxZ: 0, credit: '' },
 };
+// 주소에 ?tiles=https://…/{z}/{x}/{y}.jpg 를 붙이면 다른 위성사진 서버를 쓸 수 있음
+try {
+  const custom = new URLSearchParams(location.search).get('tiles');
+  if (custom) IMAGERY.custom = { label: '사용자 지정 사진', url: custom, maxZ: Number(new URLSearchParams(location.search).get('tilesMaxZ') || 18), credit: '사용자 지정 위성사진' };
+} catch { /* 워커 등 */ }
 
 export const QUALITY = {
   low: { maxZ: 16, split: 1.15, radius: 40000, inflight: 6, trees: 0, treeR: 0 },
-  mid: { maxZ: 17, split: 1.45, radius: 70000, inflight: 8, trees: 0.5, treeR: 320 },
+  mid: { maxZ: 17, split: 1.45, radius: 70000, inflight: 8, trees: 0.42, treeR: 300 },
   high: { maxZ: 18, split: 1.8, radius: 90000, inflight: 10, trees: 0.7, treeR: 520 },
 };
 
@@ -38,10 +43,12 @@ const VERT = /* glsl */`
   varying vec2 vUv;
   varying vec3 vN;
   varying vec3 vCol;
+  varying vec3 vWp;
   void main() {
     vUv = (uvTx * vec3(uv, 1.0)).xy;
     vN = normal;
     vCol = tcol;
+    vWp = (modelMatrix * vec4(position, 1.0)).xyz;
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     #include <fog_vertex>
@@ -57,15 +64,26 @@ const FRAG = /* glsl */`
   uniform vec3 sunCol;
   uniform vec3 ambCol;
   uniform vec3 tint;
+  uniform vec3 hlPos;
+  uniform vec3 hlDir;
+  uniform float hlI;
   varying vec2 vUv;
   varying vec3 vN;
   varying vec3 vCol;
+  varying vec3 vWp;
   void main() {
     vec3 base = hasMap > 0.5 ? texture2D(map, vUv).rgb : pow(vCol, vec3(2.2));
     vec3 n = normalize(vN);
     // 사진에 이미 그림자가 들어 있으므로 해 방향 음영은 약하게만
     float l = max(dot(n, sunDir), 0.0);
-    vec3 c = base * tint * (ambCol + sunCol * l);
+    vec3 light = ambCol + sunCol * l;
+    if (hlI > 0.001) {
+      vec3 L = vWp - hlPos;
+      float d = length(L);
+      float cone = smoothstep(0.86, 0.97, dot(L / max(d, 0.01), hlDir));
+      light += vec3(1.0, 0.93, 0.8) * hlI * cone * 90.0 / (d * d + 60.0);
+    }
+    vec3 c = base * tint * light;
     gl_FragColor = vec4(c, 1.0);
     #include <colorspace_fragment>
     #include <fog_fragment>
@@ -89,6 +107,10 @@ export class Terrain {
       sunCol: { value: new THREE.Color(0.35, 0.34, 0.32) },
       ambCol: { value: new THREE.Color(0.78, 0.8, 0.84) },
       tint: { value: new THREE.Color(1, 1, 1) },
+      // 내 차 전조등 (밤): 월드 위치·방향·세기
+      hlPos: { value: new THREE.Vector3() },
+      hlDir: { value: new THREE.Vector3(0, 0, -1) },
+      hlI: { value: 0 },
     };
     this.visibleCount = 0;
     this.stats = { built: 0, requested: 0, imageryFail: 0 };
@@ -238,7 +260,7 @@ export class Terrain {
   }
 
   evict(show) {
-    const max = 420;
+    const max = 360;
     if (this.nodes.size <= max) return;
     const list = [...this.nodes.values()].filter((n) => !show.has(n) && n.state !== 'loading' && n.state !== 'queued')
       .sort((a, b) => a.used - b.used);

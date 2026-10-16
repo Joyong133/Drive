@@ -56,8 +56,10 @@ const FRAG = /* glsl */`
       win *= 1.0 - smoothstep(0.6, 1.6, fw);
       vec3 glass = mix(vec3(0.05, 0.07, 0.09), vec3(0.22, 0.27, 0.32), h1(floorI * 13.0 + colI * 7.0 + vEx.y * 100.0) * 0.6 + max(n.y, 0.0));
       // 밤에는 일부 창에 불
-      float lit = step(0.55, h1(floorI * 3.1 + colI * 17.3 + vEx.y * 50.0)) * night;
-      glass = mix(glass, vec3(1.0, 0.82, 0.5) * 1.4, lit);
+      float r = h1(floorI * 3.1 + colI * 17.3 + vEx.y * 50.0);
+      float lit = step(0.68, r) * night;
+      vec3 lamp = mix(vec3(1.0, 0.78, 0.48), vec3(0.85, 0.9, 1.0), step(0.86, r)); // 전구색 / 형광등
+      glass = mix(glass, lamp * 0.85, lit);
       base = mix(base, glass, win);
     }
     float l = max(dot(n, sunDir), 0.0);

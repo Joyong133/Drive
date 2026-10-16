@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { Builder } from './mesher.js';
 import { LANE_W, F_BRIDGE, F_TUNNEL, F_WALL_R, F_URBAN, bankOf } from './route.js';
-import { buildChunkSigns } from './signs.js';
+import { buildChunkSigns, signMats } from './signs.js';
 import { MIRROR_LAYER } from './terrain.js';
 
 export const CHUNK_PTS = 40; // 400 m
@@ -17,10 +17,12 @@ const ASPHALT_VERT = /* glsl */`
   varying vec2 vUv;
   varying vec3 vEx;
   varying vec3 vN;
+  varying vec3 vWp;
   void main() {
     vUv = uv;
     vEx = aex;
     vN = normal;
+    vWp = (modelMatrix * vec4(position, 1.0)).xyz;
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     #include <fog_vertex>
@@ -34,9 +36,13 @@ const ASPHALT_FRAG = /* glsl */`
   uniform vec3 sunCol;
   uniform vec3 ambCol;
   uniform vec3 tunCol;
+  uniform vec3 hlPos;
+  uniform vec3 hlDir;
+  uniform float hlI;
   varying vec2 vUv;
   varying vec3 vEx;
   varying vec3 vN;
+  varying vec3 vWp;
 
   float hash2(vec2 p) { p = mod(p, 4096.0); return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float vnoise(vec2 p) {
@@ -97,6 +103,14 @@ const ASPHALT_FRAG = /* glsl */`
     } else {
       light = ambCol + sunCol * max(dot(nn, sunDir), 0.0);
     }
+    if (hlI > 0.001) {
+      vec3 L = vWp - hlPos;
+      float d = length(L);
+      float cone = smoothstep(0.86, 0.97, dot(L / max(d, 0.01), hlDir));
+      // 차선 도료는 빛을 되돌려 더 밝게 (재귀반사)
+      float paint = clamp((col.r - 0.12) * 4.0, 0.0, 1.0);
+      light += vec3(1.0, 0.93, 0.8) * hlI * cone * (90.0 + paint * 260.0) / (d * d + 60.0);
+    }
     gl_FragColor = vec4(col * light, 1.0);
     #include <colorspace_fragment>
     #include <fog_fragment>
@@ -112,6 +126,7 @@ export function makeRoadMaterials(shared) {
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       sunDir: shared.sunDir, sunCol: shared.sunCol, ambCol: shared.ambCol,
       tunCol: { value: new THREE.Color(0.95, 0.85, 0.7) },
+      hlPos: shared.hlPos, hlDir: shared.hlDir, hlI: shared.hlI,
     },
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2,
   });
@@ -204,7 +219,7 @@ export class RoadSystem {
         this.group.remove(g);
         g.traverse((o) => {
           if (o.geometry) o.geometry.dispose();
-          if (o.material && o.material.map && o.userData.ownMap) { o.material.map.dispose(); o.material.dispose(); }
+          if (o.material && o.material.map && o.userData.ownMap) { o.material.map.dispose(); o.material.dispose(); signMats.delete(o.material); }
         });
         this.chunks.delete(key);
       }

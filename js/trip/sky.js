@@ -78,7 +78,9 @@ const SKY_FRAG = /* glsl */`
   uniform float cloudLight;
   uniform vec2 wind;
   uniform sampler2D clouds;
+  uniform float night;
   varying vec3 vDir;
+  float sh(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
   void main() {
     vec3 d = normalize(vDir);
     float h = d.y;
@@ -88,6 +90,12 @@ const SKY_FRAG = /* glsl */`
     col += sunGlow * (pow(mu, 8.0) * 0.35 + pow(mu, 64.0) * 0.6);
     // 해
     col += sunGlow * smoothstep(0.9995, 0.99975, mu) * 6.0;
+    // 별 (밤)
+    if (night > 0.01 && h > 0.02) {
+      vec3 g = floor(d * 260.0);
+      float st = step(0.9965, sh(g)) * smoothstep(0.02, 0.2, h);
+      col += vec3(0.9, 0.92, 1.0) * st * night * (0.4 + 0.6 * sh(g + 1.7));
+    }
     // 구름 (평면에 투영)
     if (h > 0.0) {
       vec2 uv = d.xz / (h + 0.08) * 0.22 + wind;
@@ -116,6 +124,7 @@ export class Sky {
       cover: { value: clouds },
       cloudLight: { value: 1 },
       wind: { value: new THREE.Vector2() },
+      night: { value: 0 },
       clouds: { value: cloudTexture() },
     };
     const mat = new THREE.ShaderMaterial({
@@ -169,6 +178,7 @@ export class Sky {
     u.ground.value.copy(lerpC(hor, S(0x404840), 0.5));
     u.sunGlow.value.copy(lerpC(S(0x000000), lerpC(S(0xfff2d8), S(0xffa050), golden), Math.min(1, day + golden)));
     u.cloudLight.value = 0.15 + 0.85 * day;
+    u.night.value = night;
     u.wind.value.x += dt * 0.0016;
     u.wind.value.y += dt * 0.0007;
     this.mesh.position.copy(cam);

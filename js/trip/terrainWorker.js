@@ -130,6 +130,8 @@ function carve(x, z, h, out) {
   }
   let t = h;
   let flat = null, flatD = 1e9;
+  let cover = -1e9; // 터널 덮개 (이보다 낮으면 안 됨)
+  let under = 1e9;  // 교량 아래 (이보다 높으면 안 됨)
   for (const { s, u, px, pz, L, dx, dz } of best.values()) {
     // 오른쪽 + : 진행 방향 (dx,dz) 기준 오른쪽은 (-dz, dx)
     const lat = ((x - px) * -dz + (z - pz) * dx) / L;
@@ -139,9 +141,13 @@ function carve(x, z, h, out) {
     const fl = s[8];
     const d = Math.abs(lat) - edge + along; // 포장 끝에서 바깥쪽 거리 (안쪽이면 음수)
     if (d < out.dist) out.dist = d;
-    if (fl & F_TUNNEL) continue; // 터널 위 산은 그대로
+    if (fl & F_TUNNEL) {
+      // 터널 위 산은 그대로. 얕은 터널은 지면이 관 안으로 들어오지 않게 덮개를 올림
+      if (d < 1) cover = Math.max(cover, yr + 9.5);
+      continue;
+    }
     if (fl & F_BRIDGE) {
-      if (d < 6) { t = Math.min(t, yr - 6.5); out.road = true; }
+      if (d < 6) { under = Math.min(under, yr - 6.5); out.road = true; }
       continue;
     }
     if (d < 1.2) {
@@ -153,7 +159,10 @@ function carve(x, z, h, out) {
     if (t > yr) t = Math.min(t, yr - 0.3 + e * 0.9);        // 깎은 비탈 (1:1.1)
     else t = Math.max(t, yr - 0.3 - e * 0.6);               // 쌓은 비탈 (1:1.7)
   }
-  return flat !== null ? flat : t;
+  // 우선순위: 도로 포장 > 터널 덮개 > 교량 아래 > 비탈
+  if (flat !== null) return flat;
+  t = Math.min(t, under);
+  return Math.max(t, cover);
 }
 
 // ───────── 위성사진

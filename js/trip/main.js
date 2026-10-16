@@ -6,7 +6,7 @@ import { loadTripData, F_TUNNEL, F_BRIDGE } from './route.js';
 import { toLonLat } from './geo.js';
 import { Terrain, IMAGERY, QUALITY, MIRROR_LAYER } from './terrain.js';
 import { RoadSystem, makeRoadMaterials } from './road.js';
-import { SignFactory } from './signs.js';
+import { SignFactory, setSignGlow } from './signs.js';
 import { Sky } from './sky.js';
 import { TripPlan, carPose } from './drive.js';
 import { Traffic } from './traffic.js';
@@ -29,7 +29,7 @@ const WARPS = [1, 2, 5, 10, 20, 60];
 const NAMES = { SB: ['서울', '부산'], NB: ['부산', '서울'] };
 
 const app = {
-  settings: { ...DEFAULTS, ...storage.get('vrtrip.settings', {}) },
+  settings: { ...DEFAULTS, ...storage.get('vrtrip.settings', {}), ...(IMAGERY.custom ? { imagery: 'custom' } : {}) },
   started: false, paused: false, warp: 1, tSim: 0, view: 'inside', loading: true,
 };
 window.vrTrip = app;
@@ -79,6 +79,12 @@ const model = buildCarModel({ color: 0x2b3440, interior: true, plate: '12가 202
 scene.add(model.root);
 model.root.traverse((o) => { if (o.isMesh && !isInterior(o)) o.layers.enable(MIRROR_LAYER); });
 function isInterior(o) { let p = o; while (p) { if (p === model.interior?.group) return true; p = p.parent; } return false; }
+// 전조등 (밤): 일반 재질용 스포트라이트 + 지형/도로 셰이더용 값
+const headLight = new THREE.SpotLight(0xfff0d8, 0, 180, 0.4, 0.6, 2);
+headLight.position.set(0, 0.7, -2.3);
+headLight.target.position.set(0, -1.2, -40);
+headLight.layers.enable(MIRROR_LAYER);
+model.root.add(headLight, headLight.target);
 const rig = new THREE.Group();
 rig.add(camera);
 model.root.add(rig);
@@ -677,6 +683,15 @@ function loop() {
   const date = new Date(departDate().getTime() + app.tSim * 1000);
   const sk = sky.update(date, ll.lat, ll.lon, camWorld, dt, tunnelF);
   buildings.uniforms.night.value = sk.night;
+  // 해 질 녘부터 불빛: 다른 차 전조등·후미등, 표지판 반사, 내 차 전조등 (터널에서도 켬)
+  const dusk = clamp(1 - sk.day, 0, 1);
+  traffic.setLamps(Math.max(dusk, tunnelF * 0.85));
+  setSignGlow(dusk * 0.5);
+  terrain.shared.hlI.value = dusk;
+  headLight.intensity = dusk * 300;
+  terrain.shared.hlPos.value.set(pose.x + pose.tx * 2.3, pose.y + 0.7, pose.z + pose.tz * 2.3);
+  terrain.shared.hlDir.value.set(pose.tx, -0.06, pose.tz).normalize();
+  model.mats.head.color.setHex(dusk > 0.3 ? 0xf4f8ff : 0x9aa4b4);
   // 처음/이동 직후: 가까운 지형이 준비될 때까지 기다림
   if (app.loading) {
     app.loadT = (app.loadT || 0) + dt;
