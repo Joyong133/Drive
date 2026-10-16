@@ -17,7 +17,7 @@ const smooth = (a, sigma) => {
 };
 
 export class TripPlan {
-  constructor(route, { totalSec = 4.5 * 3600, seed = 1 } = {}) {
+  constructor(route, { totalSec = 4.5 * 3600, seed = 1, slow = [] } = {}) {
     this.route = route;
     this.totalSec = totalSec;
     const n = route.n, ds = route.spacing;
@@ -43,6 +43,8 @@ export class TripPlan {
       const fromBusan = route.name === 'SB' ? L - s : s;
       if (fromSeoul < 22000) vt = Math.min(vt, 62 + (fromSeoul / 22000) * 25);
       if (fromBusan < 9000) vt = Math.min(vt, 70);
+      // 요금소(하이패스) 통과
+      for (const z of slow) if (Math.abs(s - z.s) < z.half) vt = Math.min(vt, z.kmh);
       // 곡선: 옆 가속도 1.5 m/s² 이내
       const R = 1 / Math.max(Math.abs(route.curv[i]), 1e-5);
       vt = Math.min(vt, Math.sqrt(1.5 * R) * 3.6);

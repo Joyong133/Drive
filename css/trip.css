@@ -10,6 +10,8 @@
   border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%;
 }
 .trip-opts select option { background: #121a31; }
+.trip-opts .setting.check input { width: auto; margin-right: 8px; vertical-align: middle; }
+.trip-opts .setting.check span { color: var(--text); font-weight: 700; }
 .btn.resume { width: 100%; margin-top: 12px; }
 .resume-vr { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; }
 .trip-help { margin-top: 14px; color: var(--muted); }

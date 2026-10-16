@@ -5,9 +5,24 @@ import { Builder } from './mesher.js';
 import { LANE_W, F_BRIDGE, F_TUNNEL, F_WALL_R, F_URBAN, bankOf } from './route.js';
 import { buildChunkSigns, signMats } from './signs.js';
 import { MIRROR_LAYER } from './terrain.js';
+import { toWorld } from './geo.js';
+import { makeCanvas, canvasTexture, FONT } from '../util.js';
 
-export const CHUNK_PTS = 40; // 400 m
-const AHEAD = 3200, BEHIND = 700;
+export const CHUNK_PTS = 60; // 600 m
+
+// 본선 요금소 (Overture Maps 장소 데이터의 위치)
+export const TOLLS = [
+  { name: '서울요금소', en: 'SEOUL TOLLGATE', lat: 37.36517, lon: 127.10342 },
+  { name: '부산요금소', en: 'BUSAN TOLLGATE', lat: 35.27888, lon: 129.10609 },
+];
+export function tollPositions(route) {
+  return TOLLS.map((t) => {
+    const w = toWorld(t.lon, t.lat);
+    const nr = route.nearest(w.x, w.z);
+    return { ...t, s: nr.i * route.spacing, d: nr.d };
+  }).filter((t) => t.d < 300);
+}
+const AHEAD = 2800, BEHIND = 650;
 
 // ───────── 재질
 const ASPHALT_VERT = /* glsl */`
@@ -183,6 +198,7 @@ export class RoadSystem {
     };
     this.rampsBy = { SB: [], NB: [] };
     for (const r of ramps) this.rampsBy[r.dir].push(r);
+    this.tolls = { SB: tollPositions(routes.SB), NB: tollPositions(routes.NB) };
   }
 
   // 지금 달리는 경로의 위치에서 필요한 덩어리 목록
@@ -252,6 +268,9 @@ export class RoadSystem {
     }
     for (const ov of this.overpasses[rt.name]) {
       if (ov.s >= i0 * rt.spacing && ov.s < i1 * rt.spacing) this.buildOverpass(B, rt, ov);
+    }
+    for (const t of this.tolls[rt.name]) {
+      if (t.s >= i0 * rt.spacing && t.s < i1 * rt.spacing) this.buildToll(B, g, rt, t, origin);
     }
     B.build(g, this.mat);
     buildChunkSigns(g, this.signs, rt, i0 * rt.spacing, i1 * rt.spacing, origin);
@@ -443,7 +462,7 @@ export class RoadSystem {
   buildStructures(B, rt, frames) {
     const solid = B.part('solid');
     const glow = B.part('glow');
-    const tun = B.part('tunnel');
+    const tun = B.part('glow'); // 터널 벽도 조명 없이 정점 색으로 (같은 재질로 합쳐 드로우콜 절약)
     const isB = (f) => !!(rt.flags[f.i] & F_BRIDGE);
     const isT = (f) => !!(rt.flags[f.i] & F_TUNNEL);
     for (const run of this.runs(frames, isB)) {
@@ -582,6 +601,74 @@ export class RoadSystem {
       this.sweepVar(solid, run, () => [[-2.85, -0.4], [-2.8, 0]], COL.lip);
       this.guardrail(solid, run.filter((_, k) => k % 2 === 0), () => 4.3, 1);
     }
+  }
+
+  // 본선 요금소: 큰 지붕 + 차로 사이 부스 섬 + 하이패스 표시
+  buildToll(B, g, rt, t, origin) {
+    const solid = B.part('solid');
+    const glow = B.part('glow');
+    const f = rt.sample(t.s);
+    const i = f.i;
+    const L = rt.leftEdge(i) + 3, R = rt.rightEdge(i) + 3;
+    const fwd = [f.tx, 0, f.tz], up = [0, 1, 0], right = [-f.tz, 0, f.tx];
+    const at = (lat, h, along = 0) => [f.x + right[0] * lat + f.tx * along, f.y + h, f.z + right[2] * lat + f.tz * along];
+    const low = rt.name === 'NB' ? 0.3 : 0;
+    const cl = (R - L) / 2, hw = (R + L) / 2;
+    const roofCol = (() => { const c = new THREE.Color(0xe9ecef); return [c.r, c.g, c.b]; })();
+    const blue = (() => { const c = new THREE.Color(0x1d4f9a); return [c.r, c.g, c.b]; })();
+    // 지붕 (두께 1.6 m, 길이 22 m)
+    solid.box(at(cl, 7.6 - low), fwd, up, right, 11, 0.8, hw, roofCol, false);
+    solid.box(at(cl, 6.75 - low, -11.2), fwd, up, right, 0.15, 0.25, hw, blue, false);
+    solid.box(at(cl, 6.75 - low, 11.2), fwd, up, right, 0.15, 0.25, hw, blue, false);
+    // 기둥과 부스 섬 (차로 경계마다)
+    const W = rt.width[i];
+    const lanes = Math.round(W / LANE_W);
+    for (let k = 0; k <= lanes; k++) {
+      const lat = -W / 2 + k * LANE_W;
+      const edge = k === 0 || k === lanes;
+      const ilat = edge ? lat + (k === 0 ? -0.9 : 0.9) : lat;
+      solid.box(at(ilat, 0.25, 0), fwd, up, right, 9, 0.25, 0.4, COL.concrete);           // 섬
+      solid.box(at(ilat, 3.6, -2), fwd, up, right, 0.18, 3.4, 0.18, COL.concreteDark);    // 기둥
+      solid.box(at(ilat, 3.6, 6), fwd, up, right, 0.18, 3.4, 0.18, COL.concreteDark);
+      if (!edge) {
+        solid.box(at(ilat, 1.6, 2.5), fwd, up, right, 1.2, 1.1, 0.38, roofCol);           // 부스
+        glow.box(at(ilat, 1.9, 2.5), fwd, up, right, 1.22, 0.35, 0.39, [0.45, 0.6, 0.7], false);
+      }
+      // 차로 위 신호등 (초록 ↓)
+      if (k < lanes) {
+        const lc = lat + LANE_W / 2;
+        glow.box(at(lc, 6.55 - low, -11.3), fwd, up, right, 0.05, 0.2, 0.2, [0.2, 1.0, 0.45], false);
+      }
+    }
+    // 이름판 (앞쪽 = 다가오는 차 쪽)
+    const c = makeCanvas(1024, 160);
+    const gx = c.getContext('2d');
+    gx.fillStyle = '#1d4f9a'; gx.fillRect(0, 0, 1024, 160);
+    gx.fillStyle = '#fff'; gx.textAlign = 'center'; gx.textBaseline = 'middle';
+    gx.font = `900 84px ${FONT}`; gx.fillText(t.name, 360, 82);
+    gx.font = `700 46px ${FONT}`; gx.fillText(t.en, 780, 84);
+    gx.fillStyle = '#1fa3ff'; gx.fillRect(0, 140, 1024, 20);
+    const tex = canvasTexture(c);
+    const w = Math.min(2 * hw - 4, 40);
+    const p0 = at(cl - w / 2, 6.95 - low, -11.05), p1 = at(cl + w / 2, 6.95 - low, -11.05);
+    const pos = new Float32Array([
+      p0[0] - origin.x, p0[1] - origin.y, p0[2] - origin.z,
+      p1[0] - origin.x, p1[1] - origin.y, p1[2] - origin.z,
+      p1[0] - origin.x, p1[1] + 1.2 - origin.y, p1[2] - origin.z,
+      p0[0] - origin.x, p0[1] + 1.2 - origin.y, p0[2] - origin.z,
+    ]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([-f.tx, 0, -f.tz, -f.tx, 0, -f.tz, -f.tx, 0, -f.tz, -f.tx, 0, -f.tz]), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2));
+    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }));
+    mesh.position.copy(origin);
+    mesh.userData.ownMap = true;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    g.add(mesh);
   }
 
   // 위로 지나가는 도로/철도/육교

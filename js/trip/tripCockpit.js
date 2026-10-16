@@ -243,7 +243,7 @@ export class TripCockpit {
     row(288, '빠르기', [['warp1', '×1 실제', st.warp === 1], ['warp5', '×5', st.warp === 5], ['warp20', '×20', st.warp === 20], ['warp60', '×60', st.warp === 60]]);
     row(352, '화질', [['qlow', '가볍게', S.quality === 'low'], ['qmid', '보통', S.quality === 'mid'], ['qhigh', '고화질', S.quality === 'high']]);
     row(416, '소리', [['voice', S.voice ? '음성 안내 켬' : '음성 안내 끔', S.voice], ['sfx', S.sfx ? '주행 소리 켬' : '주행 소리 끔', S.sfx], ['mirrors', S.mirrors ? '디지털 미러 켬' : '디지털 미러 끔', S.mirrors]]);
-    row(480, '날씨', [['hazeclear', '맑음', S.haze === 'clear'], ['hazenormal', '보통', S.haze === 'normal'], ['hazehazy', '뿌연 날', S.haze === 'hazy']]);
+    row(480, '날씨·멀미', [['hazeclear', '맑음', S.haze === 'clear'], ['hazenormal', '보통', S.haze === 'normal'], ['hazehazy', '뿌연 날', S.haze === 'hazy'], ['comfort', '멀미 방지', !!S.comfort]]);
     this.btn(g, 'exitVR', st.xr ? 'VR 나가기' : '시작 화면', 220, 544, 260, 48, { size: 22 });
     g.fillStyle = '#6f8296'; g.font = `600 17px ${FONT}`; g.textAlign = 'left';
     g.fillText(st.credit, 500, 568, 510);

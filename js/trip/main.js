@@ -1,6 +1,7 @@
 // 서울 ↔ 부산 경부고속도로 VR 드라이브 — 진입점
 import * as THREE from 'three';
 import { buildCarModel, CAR } from '../carModel.js';
+import { mergeGeometries } from 'three/addons/BufferGeometryUtils.js';
 import { storage, clamp, damp } from '../util.js';
 import { loadTripData, F_TUNNEL, F_BRIDGE } from './route.js';
 import { toLonLat } from './geo.js';
@@ -45,6 +46,7 @@ renderer.xr.setReferenceSpaceType('local');
 document.getElementById('app').appendChild(renderer.domElement);
 app.renderer = renderer;
 function applyPixelRatio() {
+  if (renderer.xr.isPresenting) return;
   const dpr = window.devicePixelRatio || 1;
   renderer.setPixelRatio(S.quality === 'low' ? Math.min(dpr, 1) : S.quality === 'high' ? Math.min(dpr, 2) : Math.min(dpr, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -85,6 +87,43 @@ headLight.position.set(0, 0.7, -2.3);
 headLight.target.position.set(0, -1.2, -40);
 headLight.layers.enable(MIRROR_LAYER);
 model.root.add(headLight, headLight.target);
+// 차 안 시점에서는 밖에서만 보이는 부분(바퀴·외부 등화·그림자·유리)을 숨겨 드로우콜을 줄임
+const exteriorOnly = model.root.children.filter((c) => c !== model.interior.group && (c.isGroup || c.isMesh) &&
+  (c.material?.type === 'MeshBasicMaterial' || model.wheels.some((w) => w.steer === c) || c === model.cabin));
+function setExterior(v) { for (const c of exteriorOnly) c.visible = v; }
+// 실내 버튼 글자판 14개를 한 장의 텍스처로 합쳐 한 번에 그림 (드라이브에서는 누를 필요 없음)
+(function mergeButtonFaces() {
+  const it = model.interior;
+  const faces = Object.values(it.buttons).map((b) => b.mesh).filter((m) => m.material.map?.image);
+  if (faces.length < 2) return;
+  const cell = 256, cols = 4, rows = Math.ceil(faces.length / cols);
+  const atlas = document.createElement('canvas');
+  atlas.width = cell * cols; atlas.height = cell * rows;
+  const g = atlas.getContext('2d');
+  const geos = [];
+  faces.forEach((m, k) => {
+    const cx = (k % cols) * cell, cy = Math.floor(k / cols) * cell;
+    g.drawImage(m.material.map.image, cx, cy, cell, cell);
+    m.updateWorldMatrix(true, false);
+    const geo = m.geometry.clone();
+    // 모델 루트 기준 좌표로
+    const rel = new THREE.Matrix4().copy(model.root.matrixWorld).invert().multiply(m.matrixWorld);
+    geo.applyMatrix4(rel);
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, (cx + uv.getX(i) * cell) / atlas.width, 1 - (cy + (1 - uv.getY(i)) * cell) / atlas.height);
+    }
+    for (const key of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(key)) geo.deleteAttribute(key);
+    geos.push(geo.index ? geo.toNonIndexed() : geo);
+    m.parent.remove(m);
+  });
+  const tex = new THREE.CanvasTexture(atlas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const merged = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ map: tex }));
+  merged.name = 'buttons';
+  model.root.add(merged);
+})();
 const rig = new THREE.Group();
 rig.add(camera);
 model.root.add(rig);
@@ -154,7 +193,7 @@ async function init() {
 function setupRoute(dir, t) {
   S.dir = dir;
   route = data.routes[dir];
-  plan = new TripPlan(route, { totalSec: S.durationMin * 60 });
+  plan = new TripPlan(route, { totalSec: S.durationMin * 60, slow: roads.tolls[dir].map((t) => ({ s: t.s, half: 250, kmh: 75 })) });
   app.route = route; app.plan = plan;
   app.tSim = clamp(t, 0, plan.duration);
   app.lastS = plan.sAt(app.tSim);
@@ -173,6 +212,7 @@ function buildEvents(dir) {
   }
   for (const r of m.rests) ev.push({ s: r.s, name: r.name, icon: r.kind === 'rest' ? '☕' : '🅿', color: r.kind === 'rest' ? '#7fb3ff' : '#9fb3c8', kind: r.kind });
   for (const [a, b] of m.tunnels) if (b - a > 150) ev.push({ s: a, name: `터널 ${b - a >= 1000 ? ((b - a) / 1000).toFixed(1) + 'km' : Math.round(b - a) + 'm'}`, icon: '◠', color: '#ffb020', kind: 'tunnel', len: b - a });
+  for (const t of roads.tolls[dir]) ev.push({ s: t.s, name: `${t.name} (하이패스)`, icon: '▦', color: '#7fb3ff', kind: 'toll' });
   ev.push({ s: route.length, name: `${NAMES[dir][1]} 도착`, icon: '🏁', color: '#39e27d', kind: 'end' });
   ev.sort((a, b) => a.s - b.s);
   return ev;
@@ -199,10 +239,11 @@ function updatePose(dt) {
   pose.v = app.paused ? 0 : plan.speedAt(s);
   const r = model.root;
   susT += dt * (pose.v > 1 ? 1 : 0);
-  const k = S.comfort ? 0.3 : 1;
+  const k = S.comfort ? 0 : 1;
   const bump = (0.0035 * Math.sin(susT * 11.3) + 0.0025 * Math.sin(susT * 17.9 + 1.3) + 0.006 * Math.sin(susT * 1.9)) * Math.min(pose.v / 25, 1) * k;
   r.position.set(pose.x, pose.y + bump, pose.z);
-  r.rotation.set(pose.pitch + bump * 0.6, pose.yaw, pose.roll + 0.002 * Math.sin(susT * 2.3) * k, 'YXZ');
+  if (S.comfort) r.rotation.set(0, pose.yaw, 0, 'YXZ'); // 멀미 방지: 앞뒤·좌우 기울기 없음
+  else r.rotation.set(pose.pitch + bump * 0.6, pose.yaw, pose.roll + 0.002 * Math.sin(susT * 2.3) * k, 'YXZ');
   // 바퀴·핸들
   const f = route.sample(s);
   const d2 = (plan.latAt(s + 15) - 2 * plan.latAt(s) + plan.latAt(s - 15)) / 225;
@@ -231,6 +272,7 @@ let viewYaw = 0;
 function seatEye() { return SEATS[S.seat] || SEATS.passenger; }
 function placeRig(dt) {
   const xr = renderer.xr.isPresenting;
+  setExterior(app.view !== 'inside');
   if (app.view === 'inside') {
     if (rig.parent !== model.root) { model.root.add(rig); rig.rotation.set(0, 0, 0); recenter(); }
     if (!xr) { rig.position.copy(seatEye()); camera.position.set(0, 0, 0); camera.rotation.set(look.pitch, look.yaw, 0, 'YXZ'); }
@@ -312,6 +354,7 @@ const actions = {
   voice() { S.voice = audio.voice = !S.voice; save(); },
   sfx() { S.sfx = audio.sfx = !S.sfx; save(); },
   mirrors() { S.mirrors = !S.mirrors; save(); },
+  comfort() { S.comfort = !S.comfort; save(); toast(S.comfort ? '멀미 방지: 차 흔들림·기울기 끔' : '실제처럼 흔들림·기울기 켬'); },
   hazeclear() { S.haze = 'clear'; sky.setHaze('clear'); save(); },
   hazenormal() { S.haze = 'normal'; sky.setHaze('normal'); save(); },
   hazehazy() { S.haze = 'hazy'; sky.setHaze('hazy'); save(); },
@@ -345,6 +388,7 @@ function announce(s) {
     if (e.kind === 'rest' && d > 1900 && d < 2100 && !app.announced.has(key)) { app.announced.add(key); audio.speak(`2킬로미터 앞 ${e.name}입니다.`); }
     if (e.kind === 'jc' && d > 900 && d < 1100 && !app.announced.has(key)) { app.announced.add(key); audio.speak(`1킬로미터 앞 ${e.name.replace(' JC', ' 분기점')}입니다. 경부고속도로를 따라 계속 직진합니다.`); }
     if (e.kind === 'tunnel' && e.len > 900 && d > 250 && d < 350 && !app.announced.has(key)) { app.announced.add(key); audio.speak(`잠시 후 길이 ${(e.len / 1000).toFixed(1)}킬로미터 터널입니다.`); }
+    if (e.kind === 'toll' && d > 900 && d < 1100 && !app.announced.has(key)) { app.announced.add(key); audio.speak(`1킬로미터 앞 ${e.name.replace(' (하이패스)', '')}입니다. 하이패스 차로로 통과합니다.`); }
     if (e.kind === 'end' && d < 30 && !app.announced.has(key)) { app.announced.add(key); audio.chime(); audio.speak(`목적지 ${NAMES[S.dir][1]}에 도착했습니다. 긴 여행 수고하셨습니다.`); toast(`${NAMES[S.dir][1]} 도착! 수고하셨습니다`); }
   }
   const nm = placeAt(s);
@@ -550,6 +594,7 @@ function readStartForm() {
   S.imagery = $('opt-imagery').value;
   S.vworldKey = $('opt-vworld').value.trim();
   S.haze = $('opt-haze').value;
+  S.comfort = $('opt-comfort').checked;
   save();
   terrain.setQuality(S.quality);
   trees.setQuality(S.quality);
@@ -567,6 +612,7 @@ function fillStartForm() {
   $('opt-imagery').value = S.imagery;
   $('opt-vworld').value = S.vworldKey;
   $('opt-haze').value = S.haze;
+  $('opt-comfort').checked = !!S.comfort;
   $('vworld-row').classList.toggle('hidden', S.imagery !== 'vworld');
 }
 $('opt-imagery').addEventListener('change', () => $('vworld-row').classList.toggle('hidden', $('opt-imagery').value !== 'vworld'));
@@ -650,6 +696,7 @@ function loop() {
   lookahead.set(ahead.x, ahead.y + 2, ahead.z);
   const tnow = now / 1000;
   mark('pose');
+  terrain.splitScale = xr ? 0.88 : 1;
   terrain.update(camWorld, tnow, lookahead);
   mark('terrain');
   roads.update(route, pose.s, app.loading ? 30 : 5);
@@ -694,6 +741,7 @@ function loop() {
   model.mats.head.color.setHex(dusk > 0.3 ? 0xf4f8ff : 0x9aa4b4);
   // 처음/이동 직후: 가까운 지형이 준비될 때까지 기다림
   if (app.loading) {
+    if (!app.loadT && xr) vrToast('지형·위성사진 불러오는 중…');
     app.loadT = (app.loadT || 0) + dt;
     const zNear = terrain.detailAt(camWorld);
     const roadsLeft = roads.missing(route, pose.s);

@@ -124,7 +124,7 @@ export class Terrain {
     this.worker.postMessage({ type: 'init', routes: routeMsg, ramps: rampMsg, imagery: this.imageryConfig() });
     this.treeHandler = null;
     this.lastSelect = -1;
-    this.flat = new THREE.Color();
+    this.splitScale = 1; // VR에서는 조금 낮춤 (두 눈 = 두 배 그리기)
   }
 
   imageryConfig() {
@@ -206,7 +206,7 @@ export class Terrain {
       const d = this.dist(n, p);
       if (n.state === 'none') this.request(n, n.z * 0.6 + d / n.b.size);
       else if (n.state === 'queued') n.pri = Math.min(n.pri, n.z * 0.6 + d / n.b.size);
-      const split = n.z < q.maxZ && d < n.b.size * q.split;
+      const split = n.z < q.maxZ && d < n.b.size * q.split * this.splitScale;
       if (split && n.state === 'ready') {
         const kids = [];
         let ready = true;
