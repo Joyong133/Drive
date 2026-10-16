@@ -48,7 +48,10 @@ export class SignFactory {
     };
     // 출구: 같은 IC의 안내를 묶음
     const exits = [];
-    for (const sg of m.signs) {
+    // "서울, 대전, 대구" 처럼 한 칸에 여러 곳이 들어 있으면 나눔
+    const split = (arr) => [...new Set(arr.flatMap((l) => l.split(/\s*[,;·]\s*/)).filter(Boolean))];
+    for (const sg0 of m.signs) {
+      const sg = { ...sg0, labels: split(sg0.labels) };
       if (sg.kind !== 'exit') continue;
       const last = exits[exits.length - 1];
       if (last && sg.s - last.s < 700) {

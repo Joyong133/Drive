@@ -24,7 +24,7 @@ const DEFAULTS = {
 const SEATS = {
   driver: new THREE.Vector3(CAR.eye.x, CAR.eye.y, CAR.eye.z),
   passenger: new THREE.Vector3(-CAR.eye.x, CAR.eye.y, CAR.eye.z),
-  rear: new THREE.Vector3(0.42, 1.14, 1.42),
+  rear: new THREE.Vector3(0, 1.2, 1.42), // 뒷좌석 가운데: 앞좌석 사이로 앞이 보임
 };
 const WARPS = [1, 2, 5, 10, 20, 60];
 const NAMES = { SB: ['서울', '부산'], NB: ['부산', '서울'] };
