@@ -183,6 +183,7 @@ async function init() {
   const prog = storage.get('vrtrip.progress', null);
   if (prog && prog.t > 60 && prog.t < plan.duration - 60) {
     ui.btnResume.classList.remove('hidden');
+    $('chk-resume-vr').parentElement.classList.remove('hidden');
     ui.btnResume.textContent = `이어서 보기 · ${NAMES[prog.dir][0]}→${NAMES[prog.dir][1]} ${fmtDur(prog.t)} 지점`;
   }
   ui.status.textContent = `준비 완료 · 경부고속도로 ${(route.length / 1000).toFixed(0)} km · 터널 ${data.meta.routes[S.dir].tunnels.length}곳 · 교량 ${data.meta.routes[S.dir].bridges.length}곳`;

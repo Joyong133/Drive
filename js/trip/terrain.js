@@ -30,7 +30,7 @@ try {
 export const QUALITY = {
   low: { maxZ: 16, split: 1.15, radius: 40000, inflight: 6, trees: 0, treeR: 0 },
   mid: { maxZ: 17, split: 1.45, radius: 70000, inflight: 8, trees: 0.42, treeR: 300 },
-  high: { maxZ: 18, split: 1.8, radius: 90000, inflight: 10, trees: 0.7, treeR: 520 },
+  high: { maxZ: 18, split: 1.8, radius: 80000, inflight: 10, trees: 0.7, treeR: 520 },
 };
 
 const ROOT_Z = 9;
@@ -204,8 +204,10 @@ export class Terrain {
     const visit = (n, p, collect) => {
       n.used = this.frame;
       const d = this.dist(n, p);
-      if (n.state === 'none') this.request(n, n.z * 0.6 + d / n.b.size);
-      else if (n.state === 'queued') n.pri = Math.min(n.pri, n.z * 0.6 + d / n.b.size);
+      // 우선순위: 타일 크기에 비해 가까운 것부터 (가까운 상세 타일이 먼 큰 타일보다 먼저)
+      const pri = n.z * 0.15 + d / n.b.size;
+      if (n.state === 'none') this.request(n, pri);
+      else if (n.state === 'queued') n.pri = Math.min(n.pri, pri);
       const split = n.z < q.maxZ && d < n.b.size * q.split * this.splitScale;
       if (split && n.state === 'ready') {
         const kids = [];
@@ -215,7 +217,7 @@ export class Terrain {
           c.used = this.frame;
           if (c.state === 'none') {
             if (c.minY === 0 && c.maxY === 300) { c.minY = n.minY; c.maxY = n.maxY; }
-            this.request(c, c.z * 0.6 + this.dist(c, p) / c.b.size);
+            this.request(c, c.z * 0.15 + this.dist(c, p) / c.b.size);
           }
           if (c.state !== 'ready') ready = false;
           kids.push(c);

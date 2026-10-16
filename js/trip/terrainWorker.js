@@ -168,12 +168,20 @@ function carve(x, z, h, out) {
 // ───────── 위성사진
 // 사진 서버가 계속 실패하면(차단·오프라인) 한동안 사진 없이 빠르게 만듦
 let imgFails = 0, imgBlockedUntil = 0;
+const blankTiles = new Set(); // '사진 없음'으로 확인된 타일 (그 아래 단계도 없음)
+function knownBlank(z, x, y) {
+  for (let k = z; k >= 12; k--) {
+    if (blankTiles.has(`${k}/${x >> (z - k)}/${y >> (z - k)}`)) return true;
+  }
+  return false;
+}
 async function fetchImagery(z, x, y) {
   if (!imagery) return null;
   if (Date.now() < imgBlockedUntil) return null;
   let iz = Math.min(z, imagery.maxZ);
   let ix = x >> (z - iz), iy = y >> (z - iz);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  while (iz > 12 && knownBlank(iz, ix, iy)) { iz -= 1; ix >>= 1; iy >>= 1; }
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const url = imagery.url.replace('{z}', iz).replace('{x}', ix).replace('{y}', iy);
       const res = await fetch(url, { mode: 'cors' });
@@ -182,6 +190,13 @@ async function fetchImagery(z, x, y) {
       if (blob.size < 1200 && iz > 10) throw new Error('empty'); // 빈 타일
       const bmp = await createImageBitmap(blob, { imageOrientation: 'none' });
       imgFails = 0;
+      // 가까운 단계는 '사진 없음' 회색 안내 타일인지 확인 → 한 단계 낮은 사진으로
+      if (iz >= 15 && looksBlank(readPixels(bmp))) {
+        bmp.close?.();
+        blankTiles.add(`${iz}/${ix}/${iy}`);
+        if (blankTiles.size > 5000) blankTiles.clear();
+        throw new Error('blank');
+      }
       return { bmp, iz, ix, iy };
     } catch (e) {
       if (String(e.message).startsWith('http') || e.name === 'TypeError') {
@@ -329,12 +344,8 @@ async function buildTile(msg) {
   let img = null, imgInfo = null;
   const got = await imgP;
   if (got) {
-    if (got.iz >= 16 && looksBlank(readPixels(got.bmp))) {
-      got.bmp.close?.();
-    } else {
-      img = got.bmp;
-      imgInfo = { iz: got.iz, ix: got.ix, iy: got.iy };
-    }
+    img = got.bmp;
+    imgInfo = { iz: got.iz, ix: got.ix, iy: got.iy };
   }
   const transfer = [pos.buffer, nor.buffer, uv.buffer, col.buffer, idx.buffer];
   if (img) transfer.push(img);
